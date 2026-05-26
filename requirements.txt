@@ -1,0 +1,6 @@
+instagrapi
+numpy
+pandas
+leia-br
+streamlit
+psycopg2

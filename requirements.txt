@@ -5,3 +5,7 @@ leia-br
 streamlit
 psycopg2
 plotly
+babel
+num2words
+docxtpl
+openpyxl

@@ -1,9 +1,13 @@
+import base64
+from anyio import Path
 import streamlit as st
 import pandas as pd
 from datetime import date, datetime
 import time
 import theme
 import plotly.express as px
+import sys
+import re
 from maps import (
     MAPA_REGIOES, 
     MAPA_SEGMENTOS, 
@@ -605,21 +609,80 @@ with aba3:
 # ABA 4 — CONTRATOS (AUTOMATIZAÇÃO INTEGRADA)
 # ══════════════════════════════════════════════════════════════════
 import urllib.parse  # Para codificar o texto do WhatsApp de forma segura
-
+from db_dash import obter_eventos_disponiveis
+from db_dash import obter_servico_contratos
 with aba4:
     st.markdown("### 📜 Emissão e Controle de Contratos")
     st.caption("Central de Ingestão do Excel 365, Validação Cadastral e Assinatura Digital.")
+    EVENTOS, EVENTO_PADRAO = obter_eventos_disponiveis()
 
     # 1. BOTÃO DE INGESTÃO DO EXCEL 365
-    c_sync, _ = st.columns([1, 3])
+    c_sync, c_logs = st.columns([1, 3])
     with c_sync:
-        if st.button("🔄 Sincronizar Respostas (Excel 365)", use_container_width=True):
-            with st.spinner("Buscando dados, validando CNPJs e Higienizando... ⚡"):
-                # Aqui vai rodar sua pipeline de Regex + API pública antes do insert
-                # _db_sincronizar_excel() 
-                time.sleep(1.5) # Simulação rápida temporária
-                st.success("Planilha sincronizada e dados limpos no Postgres! 💾")
+        opcao_evento = st.selectbox(
+            "Selecione o Evento:",
+            options=list(EVENTOS.keys()),
+            index=list(EVENTOS.keys()).index(EVENTO_PADRAO),
+            format_func=lambda x: f"{x} - {EVENTOS[x].nome}"
+        )
+        botao_disparar = st.button("🔄 Sincronizar Respostas (Excel 365)", use_container_width=True)
+
+    with c_logs:
+        st.markdown("**🖥️ Monitor de Execução (Fase 1)**")
+        ecra_logs = st.empty()
+        
+        # Estado inicial do ecrã (Aguardando)
+        estilo_terminal_espera = (
+            '<div style="background-color: #0e1117; border: 1px solid #4d4d4d; '
+            'border-radius: 5px; padding: 12px; font-family: monospace; color: #a3b8cc; '
+            'height: 110px; overflow-y: auto; font-size: 13px; line-height: 1.5;">'
+            '🟢 Sistema pronto. Aguardando comando de sincronização...<br>'
+            '</div>'
+        )
+        ecra_logs.markdown(estilo_terminal_espera, unsafe_allow_html=True)
+
+    # Lógica disparada ao clicar no botão
+    if botao_disparar:
+        try:
+            # Lista dinâmica que vai acumular as linhas de texto na tela
+            logs_vivos = ["🚀 Iniciando varredura na planilha do Excel 365..."]
+            
+            def atualizar_log_na_tela(texto_novo):
+                """Adiciona o novo log à lista e atualiza o container HTML em tempo real"""
+                logs_vivos.append(texto_novo)
+                # Pega as últimas 4 mensagens para manter o terminal compacto
+                linhas_finais = "<br>".join(logs_vivos[-4:])
+                ecra_logs.markdown(
+                    f'<div style="background-color: #0e1117; border: 1px solid #ff4b4b; '
+                    f'border-radius: 5px; padding: 12px; font-family: monospace; color: #f0f2f6; '
+                    f'height: 110px; overflow-y: auto; font-size: 13px; line-height: 1.5;">'
+                    f'{linhas_finais}</div>', 
+                    unsafe_allow_html=True
+                )
+
+            # Executa o spinner visual padrão do Streamlit por fora
+            with st.spinner(f"Processando planilha de {opcao_evento}..."):
+                # 🔥 AQUI ESTÁ O SEGREDO: Passamos a sigla E a função que atualiza a tela!
+                retorno = obter_servico_contratos(sigla_evento=opcao_evento, callback_log=atualizar_log_na_tela)
+            
+            if retorno.get("status") == "sucesso":
+                atualizar_log_na_tela(f"✅ {retorno['mensagem']}")
+                st.success(retorno["mensagem"])
+                
+                if retorno.get("alertas"):
+                    with st.expander("⚠️ Ver detalhes das linhas ignoradas"):
+                        for alerta in retorno["alertas"]:
+                            st.warning(alerta)
+                
+                # Dá 2 segundos para o usuário ler o veredito final no ecrã antes de recarregar a página
+                time.sleep(2)
                 st.rerun()
+                
+            else:
+                st.error(f"❌ Erro na Ingestão: {retorno.get('mensagem')}")
+                
+        except Exception as e:
+            st.error(f"💥 Erro crítico ao chamar o serviço: {e}")
 
     st.markdown("---")
 
@@ -633,21 +696,14 @@ with aba4:
         st.markdown("#### 🛠️ Vincular Formulário 'Tô Dentro' ao CRM")
         st.caption("Ajuste o fator humano: amarre a Razão Social digitada pelo cliente ao Lead correto do Kanban.")
 
-        # Simulando dados validados vindos do banco que estão 'Aguardando Vínculo'
-        # Em produção: contratos_pendentes = _db_listar_contratos_pendentes(status='Aguardando Vínculo')
-        contratos_pendentes = [
-            {"id_solicitacao": 1, "nome_formulario": "Silva Confecções LTDA", "cnpj": "12345678000199", "email": "socio@silva.com"},
-            {"id_solicitacao": 2, "nome_formulario": "Boutique Premium ES", "cnpj": "98765432000111", "email": "contato@premium.com"}
-        ]
-
-        # Puxa os leads que estão estagnados na etapa "Tô Dentro" no CRM principal
-        todos_leads = _db_listar_leads()
-        leads_no_todentro = [l for l in todos_leads if l.get("status") == "Tô Dentro"]
+        from db_dash import db_listar_contratos_pendentes, db_listar_leads_no_todentro, db_vincular_e_enriquecer
+        
+        contratos_pendentes = db_listar_contratos_pendentes(sigla_evento=opcao_evento)
+        leads_no_todentro = db_listar_leads_no_todentro()
 
         if not contratos_pendentes:
-            st.info("🎉 Nenhum contrato pendente de vínculo ou enriquecimento no momento.")
+            st.info(f"🎉 Nenhum contrato pendente de vínculo ou enriquecimento para {opcao_evento} no momento.")
         else:
-            # Renderiza as linhas vindas do Excel para a auxiliar tratar
             for cp in contratos_pendentes:
                 with st.expander(f"🏪 Formulário de: {cp['nome_formulario']} (CNPJ: {cp['cnpj']})", expanded=True):
                     col_f1, col_f2, col_f3 = st.columns([1.5, 2, 1])
@@ -656,9 +712,9 @@ with aba4:
                         st.markdown(f"**Dados Cadastrados pelo Cliente:**\n"
                                     f"- **Sócio/E-mail:** {cp['email']}\n"
                                     f"- **CNPJ Validado:** {cp['cnpj']}")
-                        
+                    
                     with col_f2:
-                        # Seletor para o casamento humano infalível
+                        # Seletor para o casamento humano infalível puxando do banco real
                         opcoes_crm = [f"{l['id']} - {l['nome_fantasia']}" for l in leads_no_todentro]
                         lead_selecionado = st.selectbox(
                             "🤝 Selecione o Lead correspondente no CRM:",
@@ -679,11 +735,24 @@ with aba4:
                             if lead_selecionado == "-- Escolha o Lead do CRM --" or not stand.strip():
                                 st.error("❌ É obrigatório vincular o lead do CRM e preencher o endereço do Stand.")
                             else:
+                                # Divide a string do selectbox ("ID - Nome") para pegar apenas o número inteiro do ID
                                 id_lead_real = int(lead_selecionado.split(" - ")[0])
-                                # _db_vincular_e_enriquecer(cp['id_solicitacao'], id_lead_real, stand, metragem, receita)
-                                st.success(f"Lead {id_lead_real} vinculado e pronto para emissão! 🏆")
-                                time.sleep(0.5)
-                                st.rerun()
+                                
+                                # Executa a query real no Postgres salvando o estado
+                                sucesso = db_vincular_e_enriquecer(
+                                    id_solicitacao=cp['id_solicitacao'],
+                                    lead_id=id_lead_real,
+                                    stand=stand,
+                                    metragem=metragem,
+                                    receita=receita
+                                )
+                                
+                                if sucesso:
+                                    st.success(f"Lead {id_lead_real} vinculado e pronto para emissão! 🏆")
+                                    time.sleep(0.5)
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Falha crítica ao tentar atualizar no banco de dados.")
 
     # ──────────────────────────────────────────────────────────────
     # SUB-ABA 2: EMISSÃO E DISPARO (A SUA PIPELINE ANTIGA)
@@ -692,101 +761,172 @@ with aba4:
         st.markdown("#### ⚡ Emissão de Contratos em Lote / Individual")
         st.caption("Geração de templates DOCX, conversão estável para PDF e upload na Autentique.")
 
-        # Aqui listamos apenas as linhas cujo status da automação já é 'Pronto para Gerar'
-        # Em produção: leads_prontos = _db_listar_contratos_pendentes(status='Pronto para Gerar')
-        # Para fins de demonstração visual, vamos listar os leads do CRM que estão avançados
-        leads_contrato = [
-            l for l in todos_leads
-            if l.get("status") in ("Tô Dentro", "Contrato Enviado", "Contrato Assinado")
-        ]
+        # 1. PEGA OS DADOS REAIS DO POSTGRES DE QUEM ESTÁ 'Pronto para Gerar'
+        from db_dash import db_listar_contratos_prontos_para_gerar
+        from backend.contracts.contract_services import ContractService
+
+        leads_contrato = db_listar_contratos_prontos_para_gerar(sigla_evento=opcao_evento)
 
         if not leads_contrato:
             st.warning("Nenhum lead pronto para emissão de contrato. Trate-os na aba ao lado! 💜")
         else:
-            # Exibe o grid com o que já está na agulha
+            # Exibe o grid com o que já está na agulha vindo do banco real
             df_ct = pd.DataFrame([
                 {
-                    "ID":           l.get("id"),
-                    "Lead":         l.get("nome_fantasia"),
-                    "Segmento":     l.get("segmento"),
-                    "Estado":       l.get("estado"),
-                    "Fechador":     l.get("responsavel_venda"),
-                    "Status Atual": l.get("status"),
+                    "ID Solicitação": l["id_solicitacao"],
+                    "Lead":           l["nome_fantasia"],
+                    "Razão Social":   l["nome_formulario"],
+                    "Stand":          l["stand_endereco"],
+                    "Metragem (m²)":  l["metragem"],
+                    "Valor Total":    f"R$ {l['valor_total']:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
                 }
                 for l in leads_contrato
             ])
             st.dataframe(df_ct, use_container_width=True, hide_index=True)
 
             st.markdown("---")
+            
+            # Seletor baseado no Nome Fantasia
             sel_nome = st.selectbox(
                 "Selecione o Lead para Emissão",
                 options=[l["nome_fantasia"] for l in leads_contrato],
                 key="sel_emissao_final"
             )
+            # Pega o dicionário do lead selecionado
             sel = next(l for l in leads_contrato if l["nome_fantasia"] == sel_nome)
+            id_solic = sel["id_solicitacao"]
 
-            cb1, _ = st.columns([1, 3])
+            # Chaves exclusivas no session_state para controlar os botões deste ID específico
+            key_gerado = f"word_pronto_{id_solic}"
+            key_path = f"word_path_{id_solic}"
+            
+            if key_gerado not in st.session_state:
+                st.session_state[key_gerado] = False
+                st.session_state[key_path] = ""
+
+            # Colunas de botões: Gerar Word na esquerda, Enviar para Autentique na direita
+            cb1, cb2 = st.columns([1, 1])
+            
             with cb1:
-                gerar = st.button("📄 Gerar e Enviar Contrato Real", use_container_width=True)
+                import os
+                # BOTÃO 1: APENAS GERAR O WORD
+                if st.button("📄 1. Gerar Minuta Word", use_container_width=True):
+                    with st.spinner("Construindo arquivo DOCX preenchido..."):
+                        service = ContractService(sigla_evento=opcao_evento)
+                        sucesso, caminho_docx = service.gerar_apenas_docx(id_solic)
+                        
+                        if sucesso:
+                            st.session_state[key_gerado] = True
+                            st.session_state[key_path] = caminho_docx
+                            st.toast("Minuta gerada! Botão de download e envio liberados. 📝", icon="✅")
+                        else:
+                            st.error("Falha crítica ao gerar o template Word.")
 
-            if gerar:
+                if st.session_state[key_gerado] and os.path.exists(st.session_state[key_path]):
+                    with open(st.session_state[key_path], "rb") as file:
+                        st.download_button(
+                            label="📥 Baixar Contrato (.docx)",
+                            data=file,
+                            file_name=os.path.basename(st.session_state[key_path]),
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            key=f"download_btn_{id_solic}",
+                            use_container_width=True
+                        )
+                    caminho_pdf_preview = st.session_state[key_path].replace(".docx", ".pdf")   
+                    if os.path.exists(caminho_pdf_preview):
+                        with open(caminho_pdf_preview, "rb") as f:
+                            base64_pdf = base64.b64encode(f.read()).decode('utf-8')
+                        
+                        pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="500" type="application/pdf"></iframe>'
+                        st.markdown(pdf_display, unsafe_allow_html=True)
+
+            with cb2:
+                enviar = st.button(
+                    "🚀 2. Enviar para Autentique", 
+                    use_container_width=True, 
+                    disabled=not st.session_state[key_gerado],
+                    type="primary"
+                )
+
+            if enviar:
                 st.session_state.contrato_log_ativo = sel_nome
 
             if st.session_state.get("contrato_log_ativo") == sel_nome:
                 log_ph = st.empty()
                 
-                # Logs dinâmicos que agora representarão o seu backend executando de verdade
                 logs = [
                     "🔍 Buscando dados validados na tabela 'contratos_pendentes'...",
-                    "✅ Registro localizado e casado com o CRM.",
-                    "📋 Verificando integridade das features de Enriquecimento...",
-                    "🖨️ Instanciando DocxTemplate com variáveis comerciais...",
-                    f"✅ PDF gerado via Engine estável: contrato_{sel_nome.replace(' ','_').lower()}.pdf",
-                    "📧 Conectando à API da Autentique...",
-                    "✅ Upload concluído! Documento enviado para os e-mails dos signatários. ✉️",
-                    "⚙️ Sincronizando: Status do CRM alterado para 'Contrato Enviado'.",
+                    "✅ Registro localizado com sucesso.",
+                    "🖨️ Instanciando Engine do LibreOffice Headless...",
+                    f"✅ Conversão estável concluída: contrato_{sel_nome.replace(' ','_').lower()}.pdf",
+                    "📧 Conectando à API da Autentique e transmitindo multipart...",
                 ]
                 log_txt = ""
                 for linha in logs:
                     log_txt += linha + "\n"
                     log_ph.markdown(f'<div class="log-box">{log_txt}</div>', unsafe_allow_html=True)
-                    time.sleep(0.4) # Velocidade charmosa de log na tela
+                    time.sleep(0.4)
 
-                resp = sel.get("responsavel_venda", "").split()[0] if sel.get("responsavel_venda") else "Equipe"
-                
-                # Texto visual com emojis para a vendedora ver na tela do Streamlit (Dopamina Visual)
-                wpp_visual = (
-                    f"Olá, tudo bem? 😊\n\n"
-                    f"Aqui é {resp} do Exagerado - Maior Evento de Varejo e Outlet do Brasil.\n\n"
-                    f"Conforme combinado, acabei de enviar o contrato referente à nossa "
-                    f"parceria com a {sel_nome} para o seu e-mail cadastrado.\n\n"
-                    f"Por favor, confirme o recebimento! Qualquer dúvida, estou aqui. 🚀\n\n"
-                    f"Att,\n{resp} — Exagerado"
+                service = ContractService(sigla_evento=opcao_evento)
+                resultado = service.converter_pdf_e_disparar_autentique(
+                    id_solicitacao=id_solic, 
+                    caminho_docx=st.session_state[key_path],
+                    modo_teste=False
                 )
 
-                wpp_url = (
-                    f"Ola, tudo bem? \n\n"
-                    f"Aqui e {resp} do Exagerado - Maior Evento de Varejo e Outlet do Brasil.\n\n"
-                    f"Conforme combinado, acabei de enviar o contrato referente a nossa "
-                    f"parceria com a {sel_nome} para o seu e-mail cadastrado.\n\n"
-                    f"Por favor, confirme o recebimento! Qualquer duvida, estou aqui. \n\n"
-                    f"Att,\n{resp} — Exagerado"
-                )
-                
-                # Codificação simples e direta
-                wpp_encoded = urllib.parse.quote(wpp_url)
-                
-                telefone_cliente = "5527998225335" 
-                link_whatsapp_api = f"https://wa.me/{telefone_cliente}?text={wpp_encoded}"
+                if resultado["status"] == "sucesso":
+                    log_txt += "✅ Upload concluído! Documento enviado para assinatura. ✉️\n"
+                    log_txt += "⚙️ Sincronizando: Status do CRM alterado para 'Contrato Enviado'.\n"
+                    log_ph.markdown(f'<div class="log-box">{log_txt}</div>', unsafe_allow_html=True)
+                    
+                    url_contrato = resultado.get("link_assinatura") or "https://www.autentique.com.br"
+                    
+                    tel_banco = resultado.get("telefone_socio")
+                    telefone_cliente = re.sub(r"\D", "", str(tel_banco)) if tel_banco else ""
+                    
+                    if telefone_cliente and not telefone_cliente.startswith("55"):
+                        telefone_cliente = "55" + telefone_cliente
 
-                st.markdown("<br>", unsafe_allow_html=True)
-                st.markdown(
-                    f'<div class="whatsapp-box"><strong>📲 Mensagem de Acompanhamento Pronta</strong><br><br>'
-                    f'{wpp_visual.replace(chr(10),"<br>")}</div>',
-                    unsafe_allow_html=True,
-                )
-                
-                st.link_button("🟢 ABRIR CONVERSA NO WHATSAPP", link_whatsapp_api, use_container_width=True)
+                    resp = "Equipe"
+
+                    wpp_visual = (
+                        f"Olá, tudo bem? 😊\n\n"
+                        f"Aqui é da equipe do Exagerado - Maior Evento de Varejo e Outlet do Brasil.\n\n"
+                        f"Acabei de enviar o contrato referente à nossa parceria com a **{sel_nome}** para o seu e-mail.\n\n"
+                        f"Para facilitar, você pode acessar e assinar o documento direto pelo celular clicando nesse link seguro da Autentique:\n"
+                        f"🔗 {url_contrato}\n\n"
+                        f"Qualquer dúvida na leitura das cláusulas, estou aqui! 🚀\n\n"
+                        f"Att,\n{resp} — Exagerado"
+                    )
+
+                    wpp_url = (
+                        f"Ola, tudo bem? \n\n"
+                        f"Aqui e da equipe do Exagerado - Maior Evento de Varejo e Outlet do Brasil.\n\n"
+                        f"Acabei de enviar o contrato referente a nossa parceria com a {sel_nome} para o seu e-mail.\n\n"
+                        f"Para facilitar, voce pode acessar e assinar o documento direto pelo celular clicando nesse link seguro da Autentique:\n"
+                        f"{url_contrato}\n\n"
+                        f"Qualquer duvida na leitura das clausulas, estou aqui! \n\n"
+                        f"Att,\n{resp} — Exagerado"
+                    )
+                    
+                    wpp_encoded = urllib.parse.quote(wpp_url)
+                    link_whatsapp_api = f"https://wa.me/{telefone_cliente}?text={wpp_encoded}"
+
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    st.markdown(
+                        f'<div class="whatsapp-box"><strong>📲 Mensagem de Acompanhamento Pronta (Link Incluso!)</strong><br><br>'
+                        f'{wpp_visual.replace(chr(10),"<br>")}</div>',
+                        unsafe_allow_html=True,
+                    )
+                    
+                    st.link_button("🟢 ABRIR CONVERSA NO WHATSAPP", link_whatsapp_api, use_container_width=True)
+                    
+                    del st.session_state[key_gerado]
+                    del st.session_state[key_path]
+                    st.session_state.contrato_log_ativo = None
+                    
+                else:
+                    st.error(f"❌ Falha no envio da Autentique: {resultado['mensagem']}")
 
 # ══════════════════════════════════════════════════════════════════
 # ABA 5 — MOTOR DE PROSPECÇÃO

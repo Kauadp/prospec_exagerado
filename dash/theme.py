@@ -516,13 +516,20 @@ div[role="progressbar"] {
     box-shadow: var(--shadow-sm) !important;
 }
 
-/* FIX ULTRA FORÇADO: Mirando direto na classe do Emotion Cache que você encontrou */
-.st-emotion-cache-1aqnhpz {
-    color: #2D1B3D !important; /* O roxo escuro da sua paleta, ou 'black' se preferir */
+/* 1. Alvo na div de label por atributo (independente do hash do Emotion Cache) */
+[data-testid="metric-container"] div[data-testid="stMetricLabel"] {
+    color: #2D1B3D !important;
 }
 
-/* Fallback para garantir o tamanho e estilo das letras */
-[data-testid="metric-container"] [data-testid="stMetricLabel"] {
+/* 2. XEQUE-MATE: Caça qualquer div interna do Emotion Cache que o Streamlit inventar ali dentro */
+[data-testid="metric-container"] div[class^="st-emotion-cache-"] {
+    color: #2D1B3D !important;
+}
+
+/* 3. Força as propriedades de texto no rótulo e em QUALQUER elemento filho dele */
+[data-testid="metric-container"] [data-testid="stMetricLabel"],
+[data-testid="metric-container"] [data-testid="stMetricLabel"] * {
+    color: #2D1B3D !important;
     font-size: 0.68rem !important;
     font-weight: 600 !important;
     text-transform: uppercase !important;
@@ -531,7 +538,8 @@ div[role="progressbar"] {
 
 /* Mantém o número funcionando em Rosa */
 [data-testid="stMetricValue"],
-[data-testid="metric-container"] [data-testid="stMetricValue"] div {
+[data-testid="metric-container"] [data-testid="stMetricValue"] div,
+[data-testid="metric-container"] [data-testid="stMetricValue"] * {
     color: var(--rosa) !important;
     font-family: 'Space Mono', monospace !important;
     font-size: 1.45rem !important;
@@ -715,15 +723,22 @@ code, [data-testid="stCode"] {
 def apply() -> None:
     """
     Injeta CSS global + força tema claro via config.
-    Chamar logo após st.set_page_config().
     """
-    # Força o Streamlit a usar tema claro — elimina o vazamento do dark mode
     st.markdown(
         """
         <style>
-        /* Bloqueia qualquer prefers-color-scheme: dark que o Streamlit injecta */
+        /* Força o navegador a renderizar a árvore em modo claro, 
+           exatamente como o botão de simulação do Firefox faz */
+        :root {
+            color-scheme: light !important;
+        }
+        html, body, .stApp {
+            color-scheme: light !important;
+        }
         @media (prefers-color-scheme: dark) {
-            html { color-scheme: light !important; }
+            html, body, .stApp {
+                color-scheme: light !important;
+            }
         }
         </style>
         """,

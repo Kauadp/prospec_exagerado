@@ -1,4 +1,3 @@
-# db/repository.py
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from datetime import date, datetime
@@ -37,16 +36,13 @@ class LeadRepository:
     def atualizar_status(self, lead_id: int, novo_status: str, forms_enviado: bool = None) -> None:
         with self._get_connection() as conn:
             with conn.cursor() as cur:
-                # 1. Busca o status atual do lead antes de mudar (para saber qual era o status_anterior)
                 cur.execute("SELECT status FROM leads WHERE id = %s;", (lead_id,))
                 resultado = cur.fetchone()
                 status_anterior = resultado["status"] if resultado else None
 
-                # Se o status não mudou de verdade, não faz nada (evita logs duplicados)
                 if status_anterior == novo_status:
                     return
 
-                # 2. Atualiza a tabela principal de leads
                 if forms_enviado is not None:
                     query_lead = "UPDATE leads SET status = %s, forms_enviado = %s, atualizado_em = NOW() WHERE id = %s;"
                     params_lead = (novo_status, forms_enviado, lead_id)
@@ -56,12 +52,10 @@ class LeadRepository:
                 
                 cur.execute(query_lead, params_lead)
 
-                # 3. Grava o Log de Transição na tabela de histórico
                 query_history = """
                     INSERT INTO lead_status_history (lead_id, status_anterior, status_novo)
                     VALUES (%s, %s, %s);
                 """
                 cur.execute(query_history, (lead_id, status_anterior, novo_status))
                 
-            # Commita as duas operações juntas de forma segura
             conn.commit()

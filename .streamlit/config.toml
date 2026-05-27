@@ -1,0 +1,8 @@
+# .streamlit/config.toml
+[theme]
+primaryColor = "#E54E88"       # O rosa do Meu Exagerado
+backgroundColor = "#FAF9F7"   # O seu off-white principal
+secondaryBackgroundColor = "#FFFFFF" # Fundo dos cards/forms
+textColor = "#2D1B3D"         # O roxo escuro para os textos
+
+theme = "light"

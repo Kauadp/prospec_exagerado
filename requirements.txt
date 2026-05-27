@@ -4,3 +4,4 @@ pandas
 leia-br
 streamlit
 psycopg2
+plotly

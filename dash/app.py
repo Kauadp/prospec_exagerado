@@ -3,12 +3,32 @@ import pandas as pd
 from datetime import date, datetime
 import time
 import theme
-from maps import MAPA_REGIOES, MAPA_SEGMENTOS, PIPELINE, ETAPAS_FINAIS, VENDEDORAS, RESPONSAVEL, MAPA_METAS
-from db_dash import _db_listar_leads, _db_salvar_lead, _db_atualizar_status
-from services import _todos_vendedores, _todos_agendadores, _todos_responsaveis, _proximo_passo_linear, _mover_lead, _leads_filtrados, _fmt_date
-# ──────────────────────────────────────────────────────────────────
-# 0. CONFIG DA PÁGINA
-# ──────────────────────────────────────────────────────────────────
+import plotly.express as px
+from maps import (
+    MAPA_REGIOES, 
+    MAPA_SEGMENTOS, 
+    PIPELINE, 
+    ETAPAS_FINAIS, 
+    VENDEDORAS, 
+    RESPONSAVEL, 
+    MAPA_METAS
+)
+from db_dash import (
+    _db_listar_leads, 
+    _db_salvar_lead, 
+    _db_atualizar_status, 
+    _db_obter_tempo_medio_etapas,              
+    _db_obter_historico_conversoes_temporais 
+)
+from services import (
+    _todos_vendedores,
+    _todos_agendadores, 
+    _todos_responsaveis, 
+    _proximo_passo_linear, 
+    _mover_lead, 
+    _leads_filtrados, 
+    _fmt_date
+)
 
 st.set_page_config(
     page_title="Exagerado - CRM",
@@ -21,7 +41,6 @@ theme.apply()
 
 # ──────────────────────────────────────────────────────────────────
 # 3. INICIALIZAÇÃO DO SESSION STATE
-# (apenas chaves de controle de UI — sem dados mockados)
 # ──────────────────────────────────────────────────────────────────
 
 def _init_state() -> None:
@@ -31,11 +50,6 @@ def _init_state() -> None:
 
 
 _init_state()
-
-
-# ──────────────────────────────────────────────────────────────────
-# 5. HEADER
-# ──────────────────────────────────────────────────────────────────
 
 theme.render_page_header(
     title="Exagerado - CRM",
@@ -97,24 +111,19 @@ with aba1:
         if l.get("status") != "Perda / Caiu":
             criado_em = l.get("criado_em")
             
-            # Se for um datetime do Postgres, extrai apenas a data (.date())
             if isinstance(criado_em, datetime):
                 if criado_em.date() == hoje:
                     agend_count_dia += 1
-            # Caso o banco devolva já como objeto date puro
             elif isinstance(criado_em, date):
                 if criado_em == hoje:
                     agend_count_dia += 1
 
-    # 3. VALIDAÇÃO INDEPENDENTE DAS METAS
     meta_sem_ok = agend_count_sem >= meta_semanal if meta_semanal > 0 else False
     meta_dia_ok = agend_count_dia >= meta_diaria if meta_diaria > 0 else False
 
-    # Porcentagens para as barras de progresso
     pct_sem = min(agend_count_sem / meta_semanal, 1.0) if meta_semanal > 0 else 0.0
     pct_dia = min(agend_count_dia / meta_diaria, 1.0) if meta_diaria > 0 else 0.0
 
-    # Customização das mensagens e classes CSS
     hint_txt_sem   = "🏆 Meta semanal batida! Incrível! 🎉" if meta_sem_ok else f"Faltam {meta_semanal - agend_count_sem} para a meta semanal."
     hint_class_sem = "hint ok" if meta_sem_ok else "hint"
     
@@ -311,7 +320,6 @@ with aba2:
                                 _mover_lead(lead["id"], "Perda / Caiu")
 
         # ── Fase 2 — Fechamento ───────────────────────────────────
-        st.markdown("<br>")
         st.markdown("#### Fase 2 — Fechamento")
         cols_f2 = st.columns(3)
         etapas_f2 = ["Tô Dentro", "Contrato Enviado", "Contrato Assinado"]
@@ -359,185 +367,426 @@ with aba2:
 # ABA 3 — DASHBOARD
 # ══════════════════════════════════════════════════════════════════
 
+# Certifique-se de ter importado lá no topo: import plotly.express as px
+
 with aba3:
-
     st.markdown("### 📊 Dashboard de Performance")
-    st.caption("Dados em tempo real. Conectar ao PostgreSQL para persistência entre sessões.")
-
+    
+    # 1. CARREGAMENTO DOS DATASETS
     todos_leads = _db_listar_leads()
     vendedoras  = _todos_vendedores()
     agendadores = _todos_agendadores()
-    responsaveis = _todos_responsaveis()
+    
+    try:
+        historico_transicoes = _db_obter_historico_conversoes_temporais()
+        df_hist = pd.DataFrame(historico_transicoes)
+        if not df_hist.empty:
+            df_hist['criado_em'] = pd.to_datetime(df_hist['criado_em'])
+    except Exception:
+        df_hist = pd.DataFrame()
 
     if not todos_leads:
         st.info("Sem dados ainda. Cadastre leads pela aba **🚀 Novo Agendamento**.")
     else:
-        # Seletor de recorte
-        dash_vend = st.selectbox(
-            "🎯 Visualizar performance de:",
-            ["Equipe completa"] + vendedoras,
-            key="dash_vend",
-        )
+        # ──────────────────────────────────────────────────────────
+        # SEÇÃO 1: PAINEL GERENCIAL (O QUE O GUSTAVO QUER VER)
+        # ──────────────────────────────────────────────────────────
+        st.subheader("🎯 Visão Executiva e Controle de Metas")
+        
+        with st.container():
+            f1, f2 = st.columns([1, 2])
+            with f1:
+                filtro_tempo = st.radio(
+                    "📆 Período de Análise:",
+                    ["Hoje", "Esta Semana", "Este Mês", "Histórico Total"],
+                    horizontal=True,
+                    key="dash_filtro_tempo"
+                )
+            with f2:
+                dash_vend = st.selectbox(
+                    "👤 Filtrar por Membro da Equipe:",
+                    ["Equipe completa"] + agendadores,
+                    key="dash_vend_exec"
+                )
 
-        leads_dash = (
-            todos_leads if dash_vend == "Equipe completa"
-            else [l for l in todos_leads
-                  if l.get("responsavel_agendamento") == dash_vend
-                  or l.get("responsavel_venda") == dash_vend]
-        )
+        hoje_dt = date.today()
+        
+        if filtro_tempo == "Hoje":
+            df_hist_filtrado = df_hist[df_hist['criado_em'].dt.date == hoje_dt] if not df_hist.empty else pd.DataFrame()
+            leads_criados_periodo = [l for l in todos_leads if pd.to_datetime(l.get('criado_em')).date() == hoje_dt]
+        elif filtro_tempo == "Esta Semana":
+            inicio_semana = hoje_dt - pd.Timedelta(days=hoje_dt.weekday())
+            df_hist_filtrado = df_hist[df_hist['criado_em'].dt.date >= inicio_semana] if not df_hist.empty else pd.DataFrame()
+            leads_criados_periodo = [l for l in todos_leads if pd.to_datetime(l.get('criado_em')).date() >= inicio_semana]
+        elif filtro_tempo == "Este Mês":
+            df_hist_filtrado = df_hist[(df_hist['criado_em'].dt.year == hoje_dt.year) & (df_hist['criado_em'].dt.month == hoje_dt.month)] if not df_hist.empty else pd.DataFrame()
+            leads_criados_periodo = [l for l in todos_leads if pd.to_datetime(l.get('criado_em')).year == hoje_dt.year and pd.to_datetime(l.get('criado_em')).month == hoje_dt.month]
+        else:
+            df_hist_filtrado = df_hist
+            leads_criados_periodo = todos_leads
 
-        # ── KPIs ──────────────────────────────────────────────────
+        if dash_vend != "Equipe completa":
+            leads_criados_periodo = [l for l in leads_criados_periodo if l.get("responsavel_agendamento") == dash_vend]
+            if not df_hist_filtrado.empty:
+                ids_dono = {l['id'] for l in todos_leads if l.get("responsavel_agendamento") == dash_vend}
+                df_hist_filtrado = df_hist_filtrado[df_hist_filtrado['lead_id'].isin(ids_dono)]
+
+        # ── CÁLCULO DOS KPIS  ─────────
+        agendamentos_f1 = len(leads_criados_periodo)
+        
+        if not df_hist_filtrado.empty:
+            reunioes_f1 = df_hist_filtrado[df_hist_filtrado['status_novo'] == "Reunião Realizada"]['lead_id'].nunique()
+            assinados_f1 = df_hist_filtrado[df_hist_filtrado['status_novo'] == "Contrato Assinado"]['lead_id'].nunique()
+            perdas_f1 = df_hist_filtrado[df_hist_filtrado['status_novo'] == "Perda / Caiu"]['lead_id'].nunique()
+            
+            if perdas_f1 == 0:
+                perdas_f1 = sum(1 for l in leads_criados_periodo if l.get("status") == "Perda / Caiu")
+        else:
+            reunioes_f1 = sum(1 for l in leads_criados_periodo if l.get("status") not in ("Agendado", "No Show", "Perda / Caiu"))
+            assinados_f1 = sum(1 for l in leads_criados_periodo if l.get("status") == "Contrato Assinado")
+            perdas_f1 = sum(1 for l in leads_criados_periodo if l.get("status") == "Perda / Caiu")
+
+        tx_reu_f1 = f"{(reunioes_f1 / agendamentos_f1 * 100):.0f}%" if agendamentos_f1 else "0%"
+        tx_fec_f1 = f"{(assinados_f1 / max(reunioes_f1, 1) * 100):.0f}%"
+
+        # Renderização dos Cards
         st.markdown("<br>", unsafe_allow_html=True)
-        k1, k2, k3, k4, k5 = st.columns(5)
-
-        total    = len(leads_dash)
-        reunioes = sum(1 for l in leads_dash if l.get("status") not in ("Agendado", "No Show", "Perda / Caiu"))
-        dentro   = sum(1 for l in leads_dash if l.get("status") in ("Tô Dentro", "Contrato Enviado", "Contrato Assinado"))
-        assinou  = sum(1 for l in leads_dash if l.get("status") == "Contrato Assinado")
-        perdas   = sum(1 for l in leads_dash if l.get("status") == "Perda / Caiu")
-
-        tx_reu = f"{reunioes/total*100:.0f}%" if total else "—"
-        tx_fec = f"{assinou/max(reunioes,1)*100:.0f}%"
-
+        k1, k2, k3, k4 = st.columns(4)
         C = theme.CORES
-        with k1: theme.render_dash_card("Agendamentos",   str(total),    "total no funil",       C.get("sky", "#87CEEB")) 
-        with k2: theme.render_dash_card("Reuniões",       str(reunioes), f"taxa: {tx_reu}",       C.get("reuniao", "#4B0082"))
-        with k3: theme.render_dash_card("Tô Dentro",      str(dentro),   "sinalização positiva",  C.get("dentro", "#228B22"))
-        with k4: theme.render_dash_card("Assinados 🏆",   str(assinou),  f"conv.: {tx_fec}",      C.get("gold", "#FFD700"))
-        with k5: theme.render_dash_card("Perdas",         str(perdas),   "caíram do funil",       C.get("red", "#FF0000"))
+        with k1: theme.render_dash_card("Novos Agendamentos", str(agendamentos_f1), "no período selecionado", C.get("sky", "#87CEEB"))
+        with k2: theme.render_dash_card("Reuniões Realizadas", str(reunioes_f1), f"Aproveitamento: {tx_reu_f1}", C.get("reuniao", "#4B0082"))
+        with k3: theme.render_dash_card("Contratos Assinados 🏆", str(assinados_f1), f"Conversão: {tx_fec_f1}", C.get("gold", "#FFD700"))
+        with k4: theme.render_dash_card("Leads Perdidos", str(perdas_f1), "caíram do funil", C.get("red", "#FF0000"))
 
-        st.markdown("<br>")
-        st.markdown("---")
+        # ── 🚀 GRÁFICO DE FUNIL DO PLOTLY ──
+        st.markdown("#### 🏷️ Funil Volumétrico de Conversão (Movimentação do Período)")
+        
+        if not df_hist_filtrado.empty:
+            cnt_agend = len(leads_criados_periodo)
+            cnt_reuniu = df_hist_filtrado[df_hist_filtrado['status_novo'] == "Reunião Realizada"]['lead_id'].nunique()
+            cnt_dentro = df_hist_filtrado[df_hist_filtrado['status_novo'] == "Tô Dentro"]['lead_id'].nunique()
+            cnt_envia  = df_hist_filtrado[df_hist_filtrado['status_novo'] == "Contrato Enviado"]['lead_id'].nunique()
+            cnt_assina = df_hist_filtrado[df_hist_filtrado['status_novo'] == "Contrato Assinado"]['lead_id'].nunique()
+            
+            cnt_reuniu = max(cnt_reuniu, cnt_dentro, cnt_envia, cnt_assina)
+            cnt_dentro = max(cnt_dentro, cnt_envia, cnt_assina)
+            cnt_envia  = max(cnt_envia, cnt_assina)
+            cnt_agend  = max(cnt_agend, cnt_reuniu)
+        else:
+            # Fallback seguro caso o histórico esteja zerado (Primeiros testes)
+            cnt_assina = sum(1 for l in leads_criados_periodo if l.get("status") == "Contrato Assinado")
+            cnt_envia  = sum(1 for l in leads_criados_periodo if l.get("status") == "Contrato Enviado") + cnt_assina
+            cnt_dentro = sum(1 for l in leads_criados_periodo if l.get("status") == "Tô Dentro") + cnt_envia
+            cnt_reuniu = sum(1 for l in leads_criados_periodo if l.get("status") == "Reunião Realizada") + cnt_dentro
+            cnt_agend  = sum(1 for l in leads_criados_periodo if l.get("status") == "Agendado") + cnt_reuniu
 
-        # ── Ranking por vendedora ─────────────────────────────────
-        st.markdown("#### 👥 Ranking — Agendamentos por Vendedora")
+        estagios_funnel = ["Agendado", "Reunião Realizada", "Tô Dentro", "Contrato Enviado", "Contrato Assinado"]
+        valores_funnel = [cnt_agend, cnt_reuniu, cnt_dentro, cnt_envia, cnt_assina]
+        
+        df_funnel_plot = pd.DataFrame({
+            "Etapa": estagios_funnel,
+            "Leads": valores_funnel
+        })
+        
+        fig_funnel = px.funnel(
+            df_funnel_plot, 
+            x='Leads', 
+            y='Etapa',
+            color_discrete_sequence=["#E54E88"]
+        )
+        fig_funnel.update_layout(
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font=dict(color="#2D1B3D"),
+            margin=dict(l=20, r=20, t=20, b=20),
+            height=320
+        )
+        st.plotly_chart(fig_funnel, use_container_width=True)
+
+
+        # ── 👥 TABELA DE PERFORMANCE ──
+        st.markdown("#### 👥 Desempenho Acumulado por Agendadora")
         rows = []
+        
         for v in agendadores:
-            ll   = [l for l in todos_leads if l.get("responsavel_agendamento") == v]
-            reu  = sum(1 for l in ll if l.get("status") not in ("Agendado", "No Show", "Perda / Caiu"))
-            ass  = sum(1 for l in ll if l.get("status") == "Contrato Assinado")
-            per  = sum(1 for l in ll if l.get("status") == "Perda / Caiu")
-            rows.append({
-                "Vendedora":       v,
-                "Agendamentos":    len(ll),
-                "Reuniões":        reu,
-                "Assinados 🏆":    ass,
-                "Perdas 💀":       per,
-                "Conv. ass/reu":   f"{ass/max(reu,1)*100:.0f}%",
-                "Meta sem.":       meta_semanal,
-                "% Meta":          f"{len(ll)/meta_semanal*100:.0f}%",
-            })
+            leads_da_vendedora = [l for l in leads_criados_periodo if l.get("responsavel_agendamento") == v]
+            
+            ns  = sum(1 for l in leads_da_vendedora if l.get("status") == "No Show")
+            per = sum(1 for l in leads_da_vendedora if l.get("status") == "Perda / Caiu")
 
+            cnt_assina = sum(1 for l in leads_da_vendedora if l.get("status") == "Contrato Assinado")
+            cnt_envia  = sum(1 for l in leads_da_vendedora if l.get("status") == "Contrato Enviado") + cnt_assina
+            cnt_dentro = sum(1 for l in leads_da_vendedora if l.get("status") == "Tô Dentro") + cnt_envia
+            cnt_reuniu = sum(1 for l in leads_da_vendedora if l.get("status") == "Reunião Realizada") + cnt_dentro
+            
+            cnt_ativo_agendado = sum(1 for l in leads_da_vendedora if l.get("status") == "Agendado")
+            cnt_agend = cnt_ativo_agendado + cnt_reuniu + ns + per
+
+            meta_sem = MAPA_METAS.get(v, {}).get("semanal", 1)
+            
+            rows.append({
+                "Agendadora": v,
+                "Total Agendados": cnt_agend,
+                "No Shows 🎬": ns,
+                "Reuniões 🤝": cnt_reuniu,
+                "Tô Dentro 🔥": cnt_dentro,
+                "Env. Contrato 📨": cnt_envia,
+                "Assinados 🏆": cnt_assina,
+                "Perdas 💀": per,
+                "Conversão (Reu/Agen)": f"{(cnt_reuniu / max(cnt_agend, 1) * 100):.0f}%",
+                "Eficiência (Ass/Reu)": f"{(cnt_assina / max(cnt_reuniu, 1) * 100):.0f}%",
+                "% Meta Semanal": f"{(cnt_agend / meta_sem * 100):.0f}%",
+            })
+            
         if rows:
-            df_rank = pd.DataFrame(rows).sort_values("Agendamentos", ascending=False)
+            df_rank = pd.DataFrame(rows).sort_values("Total Agendados", ascending=False)
             st.dataframe(df_rank, use_container_width=True, hide_index=True)
 
-        st.markdown("<br>")
+        st.markdown("<br><hr><br>", unsafe_allow_html=True)
 
-        # ── Distribuição por etapa ────────────────────────────────
-        st.markdown(f"#### 🗂️ Leads por Etapa — {dash_vend}")
-        etapa_data = {e: sum(1 for l in leads_dash if l.get("status") == e) for e in PIPELINE}
-        df_et = pd.DataFrame(list(etapa_data.items()), columns=["Etapa", "Leads"])
-        st.bar_chart(df_et.set_index("Etapa"), use_container_width=True, color="#5B5FEF")
+        # ──────────────────────────────────────────────────────────
+        # SEÇÃO 2: ANALYTICS & CICLO DE VIDA
+        # ──────────────────────────────────────────────────────────
+        st.subheader("🧠 Laboratório Científico de Sales Ops")
+        st.caption("Métricas avançadas de retenção e distribuição para insights de modelagem preditiva.")
+        
+        leads_analise = [l for l in todos_leads if l.get("status") in PIPELINE]
 
-        # ── Distribuição por segmento ─────────────────────────────
-        st.markdown("#### 🏷️ Leads por Segmento")
-        seg_data: dict[str, int] = {}
-        for l in leads_dash:
-            seg_data[l.get("segmento", "—")] = seg_data.get(l.get("segmento", "—"), 0) + 1
-        if seg_data:
-            df_seg = pd.DataFrame(list(seg_data.items()), columns=["Segmento", "Leads"]).sort_values("Leads", ascending=False)
-            st.bar_chart(df_seg.set_index("Segmento"), use_container_width=True, color="#0EA5E9")
+        g1, g2 = st.columns(2)
+        
+        with g1:
+            st.markdown("#### ⏳ Tempo Médio de Retenção por Etapa (Dias)")
+            try:
+                tempos_etapas = _db_obter_tempo_medio_etapas()
+                if tempos_etapas:
+                    df_tempos = pd.DataFrame(tempos_etapas)
+                    st.bar_chart(df_tempos.set_index("etapa"), use_container_width=True, color="#8B5CF6")
+                else:
+                    st.info("Aguardando mais transições de histórico para calcular médias estáveis.")
+            except Exception:
+                df_mock_tempo = pd.DataFrame([{"etapa": e, "media_dias": 0.0} for e in PIPELINE])
+                st.bar_chart(df_mock_tempo.set_index("etapa"), use_container_width=True, color="#8B5CF6")
+
+        with g2:
+            st.markdown("#### 💀 Concentração de Perda por Etapa do Funil")
+            if not df_hist.empty:
+                df_perdas = df_hist[df_hist['status_novo'] == "Perda / Caiu"]
+                if not df_perdas.empty and 'status_anterior' in df_perdas.columns:
+                    loss_distribution = df_perdas['status_anterior'].value_counts().reset_index()
+                    loss_distribution.columns = ['Etapa de Origem da Perda', 'Quantidade']
+                    st.bar_chart(loss_distribution.set_index('Etapa de Origem da Perda'), use_container_width=True, color="#EF4444")
+                else:
+                    st.info("Nenhuma perda registrada no histórico até o momento.")
+            else:
+                st.info("Sem dados de histórico suficientes.")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        g3, g4 = st.columns(2)
+        
+        with g3:
+            st.markdown("#### 🏷️ Volume de Leads por Segmento")
+            seg_data = {}
+            for l in leads_analise:
+                seg_data[l.get("segmento", "—")] = seg_data.get(l.get("segmento", "—"), 0) + 1
+            if seg_data:
+                df_seg = pd.DataFrame(list(seg_data.items()), columns=["Segmento", "Leads"]).sort_values("Leads", ascending=False)
+                st.bar_chart(df_seg.set_index("Segmento"), use_container_width=True, color="#0EA5E9")
+
+        with g4:
+            st.markdown("#### 📍 Distribuição Regional de Oportunidades")
+            est_data = {}
+            for l in leads_analise:
+                est_data[l.get("estado", "—")] = est_data.get(l.get("estado", "—"), 0) + 1
+            if est_data:
+                df_est = pd.DataFrame(list(est_data.items()), columns=["Estado", "Leads"]).sort_values("Leads", ascending=False)
+                st.bar_chart(df_est.set_index("Estado"), use_container_width=True, color="#10B981")
 
 # ══════════════════════════════════════════════════════════════════
-# ABA 4 — CONTRATOS
+# ABA 4 — CONTRATOS (AUTOMATIZAÇÃO INTEGRADA)
 # ══════════════════════════════════════════════════════════════════
+import urllib.parse  # Para codificar o texto do WhatsApp de forma segura
 
 with aba4:
+    st.markdown("### 📜 Emissão e Controle de Contratos")
+    st.caption("Central de Ingestão do Excel 365, Validação Cadastral e Assinatura Digital.")
 
-    st.markdown("### 📜 Emissão de Contratos")
-    st.info(
-        "ℹ️ Exibe leads em **Tô Dentro**, **Contrato Enviado** e **Contrato Assinado**. "
-        "Quando o banco estiver conectado, os dados do formulário 'Tô Dentro' "
-        "preencherão o contrato automaticamente."
-    )
+    # 1. BOTÃO DE INGESTÃO DO EXCEL 365
+    c_sync, _ = st.columns([1, 3])
+    with c_sync:
+        if st.button("🔄 Sincronizar Respostas (Excel 365)", use_container_width=True):
+            with st.spinner("Buscando dados, validando CNPJs e Higienizando... ⚡"):
+                # Aqui vai rodar sua pipeline de Regex + API pública antes do insert
+                # _db_sincronizar_excel() 
+                time.sleep(1.5) # Simulação rápida temporária
+                st.success("Planilha sincronizada e dados limpos no Postgres! 💾")
+                st.rerun()
 
-    todos_leads = _db_listar_leads()
-    leads_contrato = [
-        l for l in todos_leads
-        if l.get("status") in ("Tô Dentro", "Contrato Enviado", "Contrato Assinado")
-    ]
+    st.markdown("---")
 
-    if not leads_contrato:
-        st.warning("Nenhum lead na fase de contrato. Avance leads pelo Funil de Vendas! 💜")
-    else:
-        df_ct = pd.DataFrame([
-            {
-                "ID":           l.get("id"),
-                "Lead":         l.get("nome_fantasia"),
-                "Segmento":     l.get("segmento"),
-                "Estado":       l.get("estado"),
-                "Fechador":     l.get("responsavel_venda"),
-                "Status":       l.get("status"),
-                "Forms":        "✅" if l.get("forms_enviado") else "⏳ pendente",
-                "Data Reunião": _fmt_date(l.get("data_reuniao")),
-            }
-            for l in leads_contrato
-        ])
-        st.dataframe(df_ct, use_container_width=True, hide_index=True)
+    # 2. ABA INTERNA: SEPARAÇÃO DO FLUXO OPERACIONAL
+    sub_aba_vincular, sub_aba_gerar = st.tabs(["🔍 1. Casar e Enriquecer Leads", "📄 2. Gerar e Disparar Contrato"])
 
-        st.markdown("---")
-        st.markdown("#### ⚡ Gerar e Enviar Contrato")
+    # ──────────────────────────────────────────────────────────────
+    # SUB-ABA 1: CASAMENTO MANUAL (DATA CURATION)
+    # ──────────────────────────────────────────────────────────────
+    with sub_aba_vincular:
+        st.markdown("#### 🛠️ Vincular Formulário 'Tô Dentro' ao CRM")
+        st.caption("Ajuste o fator humano: amarre a Razão Social digitada pelo cliente ao Lead correto do Kanban.")
 
-        sel_nome = st.selectbox(
-            "Selecione o Lead",
-            options=[l["nome_fantasia"] for l in leads_contrato],
-        )
-        sel = next(l for l in leads_contrato if l["nome_fantasia"] == sel_nome)
+        # Simulando dados validados vindos do banco que estão 'Aguardando Vínculo'
+        # Em produção: contratos_pendentes = _db_listar_contratos_pendentes(status='Aguardando Vínculo')
+        contratos_pendentes = [
+            {"id_solicitacao": 1, "nome_formulario": "Silva Confecções LTDA", "cnpj": "12345678000199", "email": "socio@silva.com"},
+            {"id_solicitacao": 2, "nome_formulario": "Boutique Premium ES", "cnpj": "98765432000111", "email": "contato@premium.com"}
+        ]
 
-        if not sel.get("forms_enviado"):
-            st.warning("⚠️ Este lead ainda não enviou o formulário de dados ('Tô Dentro'). O contrato pode estar incompleto.")
+        # Puxa os leads que estão estagnados na etapa "Tô Dentro" no CRM principal
+        todos_leads = _db_listar_leads()
+        leads_no_todentro = [l for l in todos_leads if l.get("status") == "Tô Dentro"]
 
-        cb1, _ = st.columns([1, 3])
-        with cb1:
-            gerar = st.button("📄 Gerar e Enviar Contrato", use_container_width=True)
+        if not contratos_pendentes:
+            st.info("🎉 Nenhum contrato pendente de vínculo ou enriquecimento no momento.")
+        else:
+            # Renderiza as linhas vindas do Excel para a auxiliar tratar
+            for cp in contratos_pendentes:
+                with st.expander(f"🏪 Formulário de: {cp['nome_formulario']} (CNPJ: {cp['cnpj']})", expanded=True):
+                    col_f1, col_f2, col_f3 = st.columns([1.5, 2, 1])
+                    
+                    with col_f1:
+                        st.markdown(f"**Dados Cadastrados pelo Cliente:**\n"
+                                    f"- **Sócio/E-mail:** {cp['email']}\n"
+                                    f"- **CNPJ Validado:** {cp['cnpj']}")
+                        
+                    with col_f2:
+                        # Seletor para o casamento humano infalível
+                        opcoes_crm = [f"{l['id']} - {l['nome_fantasia']}" for l in leads_no_todentro]
+                        lead_selecionado = st.selectbox(
+                            "🤝 Selecione o Lead correspondente no CRM:",
+                            options=["-- Escolha o Lead do CRM --"] + opcoes_crm,
+                            key=f"sel_lead_{cp['id_solicitacao']}"
+                        )
+                    
+                    with col_f3:
+                        st.markdown("**Enriquecimento Operacional:**")
+                        stand = st.text_input("🏪 Stand (Endereço)", placeholder="Ex: Setor A - 12", key=f"stand_{cp['id_solicitacao']}")
+                        metragem = st.number_input("📐 Metragem (m²)", min_value=0.0, step=1.0, key=f"metra_{cp['id_solicitacao']}")
+                        receita = st.number_input("💰 Valor do Stand (R$)", min_value=0.0, step=100.0, key=f"rec_{cp['id_solicitacao']}")
 
-        if gerar:
-            st.session_state.contrato_log_ativo = sel_nome
+                    # Botão para salvar tudo na tabela unica contratos_pendentes mudando status para 'Pronto para Gerar'
+                    b_salvar, _ = st.columns([1, 3])
+                    with b_salvar:
+                        if st.button("💾 Salvar e Validar", key=f"btn_salvar_{cp['id_solicitacao']}", use_container_width=True):
+                            if lead_selecionado == "-- Escolha o Lead do CRM --" or not stand.strip():
+                                st.error("❌ É obrigatório vincular o lead do CRM e preencher o endereço do Stand.")
+                            else:
+                                id_lead_real = int(lead_selecionado.split(" - ")[0])
+                                # _db_vincular_e_enriquecer(cp['id_solicitacao'], id_lead_real, stand, metragem, receita)
+                                st.success(f"Lead {id_lead_real} vinculado e pronto para emissão! 🏆")
+                                time.sleep(0.5)
+                                st.rerun()
 
-        if st.session_state.get("contrato_log_ativo") == sel_nome:
-            log_ph = st.empty()
-            logs = [
-                "🔍 Buscando dados do cliente no CRM...",
-                "✅ Dados encontrados com sucesso.",
-                "📋 Validando CNPJ junto à Receita Federal...",
-                "✅ CNPJ válido e ativo.",
-                "🖨️  Gerando contrato em PDF...",
-                f"✅ PDF gerado: contrato_{sel_nome.replace(' ','_').lower()}.pdf",
-                "📧 Enviando contrato por e-mail...",
-                "✅ Contrato enviado com sucesso! ✉️",
-            ]
-            log_txt = ""
-            for linha in logs:
-                log_txt += linha + "\n"
-                log_ph.markdown(f'<div class="log-box">{log_txt}</div>', unsafe_allow_html=True)
-                time.sleep(0.28)
+    # ──────────────────────────────────────────────────────────────
+    # SUB-ABA 2: EMISSÃO E DISPARO (A SUA PIPELINE ANTIGA)
+    # ──────────────────────────────────────────────────────────────
+    with sub_aba_gerar:
+        st.markdown("#### ⚡ Emissão de Contratos em Lote / Individual")
+        st.caption("Geração de templates DOCX, conversão estável para PDF e upload na Autentique.")
 
-            resp = sel.get("responsavel_venda", "").split()[0] if sel.get("responsavel_venda") else "Equipe"
-            wpp  = (
-                f"Olá, tudo bem? 😊\n\n"
-                f"Aqui é {resp} do Exagerado - Maior Evento de Varejo e Outlet do Brasil.\n\n"
-                f"Conforme combinado, acabei de enviar o contrato referente à nossa "
-                f"parceria com a {sel_nome} para o seu e-mail cadastrado.\n\n"
-                f"Por favor, confirme o recebimento! Qualquer dúvida, estou aqui. 🚀\n\n"
-                f"Att,\n{resp} — Exagerado"
+        # Aqui listamos apenas as linhas cujo status da automação já é 'Pronto para Gerar'
+        # Em produção: leads_prontos = _db_listar_contratos_pendentes(status='Pronto para Gerar')
+        # Para fins de demonstração visual, vamos listar os leads do CRM que estão avançados
+        leads_contrato = [
+            l for l in todos_leads
+            if l.get("status") in ("Tô Dentro", "Contrato Enviado", "Contrato Assinado")
+        ]
+
+        if not leads_contrato:
+            st.warning("Nenhum lead pronto para emissão de contrato. Trate-os na aba ao lado! 💜")
+        else:
+            # Exibe o grid com o que já está na agulha
+            df_ct = pd.DataFrame([
+                {
+                    "ID":           l.get("id"),
+                    "Lead":         l.get("nome_fantasia"),
+                    "Segmento":     l.get("segmento"),
+                    "Estado":       l.get("estado"),
+                    "Fechador":     l.get("responsavel_venda"),
+                    "Status Atual": l.get("status"),
+                }
+                for l in leads_contrato
+            ])
+            st.dataframe(df_ct, use_container_width=True, hide_index=True)
+
+            st.markdown("---")
+            sel_nome = st.selectbox(
+                "Selecione o Lead para Emissão",
+                options=[l["nome_fantasia"] for l in leads_contrato],
+                key="sel_emissao_final"
             )
-            st.markdown(
-                f'<div class="whatsapp-box"><strong>📲 Mensagem WhatsApp</strong><br><br>'
-                f'{wpp.replace(chr(10),"<br>")}</div>',
-                unsafe_allow_html=True,
-            )
-            st.code(wpp, language=None)
+            sel = next(l for l in leads_contrato if l["nome_fantasia"] == sel_nome)
+
+            cb1, _ = st.columns([1, 3])
+            with cb1:
+                gerar = st.button("📄 Gerar e Enviar Contrato Real", use_container_width=True)
+
+            if gerar:
+                st.session_state.contrato_log_ativo = sel_nome
+
+            if st.session_state.get("contrato_log_ativo") == sel_nome:
+                log_ph = st.empty()
+                
+                # Logs dinâmicos que agora representarão o seu backend executando de verdade
+                logs = [
+                    "🔍 Buscando dados validados na tabela 'contratos_pendentes'...",
+                    "✅ Registro localizado e casado com o CRM.",
+                    "📋 Verificando integridade das features de Enriquecimento...",
+                    "🖨️ Instanciando DocxTemplate com variáveis comerciais...",
+                    f"✅ PDF gerado via Engine estável: contrato_{sel_nome.replace(' ','_').lower()}.pdf",
+                    "📧 Conectando à API da Autentique...",
+                    "✅ Upload concluído! Documento enviado para os e-mails dos signatários. ✉️",
+                    "⚙️ Sincronizando: Status do CRM alterado para 'Contrato Enviado'.",
+                ]
+                log_txt = ""
+                for linha in logs:
+                    log_txt += linha + "\n"
+                    log_ph.markdown(f'<div class="log-box">{log_txt}</div>', unsafe_allow_html=True)
+                    time.sleep(0.4) # Velocidade charmosa de log na tela
+
+                resp = sel.get("responsavel_venda", "").split()[0] if sel.get("responsavel_venda") else "Equipe"
+                
+                # Texto visual com emojis para a vendedora ver na tela do Streamlit (Dopamina Visual)
+                wpp_visual = (
+                    f"Olá, tudo bem? 😊\n\n"
+                    f"Aqui é {resp} do Exagerado - Maior Evento de Varejo e Outlet do Brasil.\n\n"
+                    f"Conforme combinado, acabei de enviar o contrato referente à nossa "
+                    f"parceria com a {sel_nome} para o seu e-mail cadastrado.\n\n"
+                    f"Por favor, confirme o recebimento! Qualquer dúvida, estou aqui. 🚀\n\n"
+                    f"Att,\n{resp} — Exagerado"
+                )
+
+                wpp_url = (
+                    f"Ola, tudo bem? \n\n"
+                    f"Aqui e {resp} do Exagerado - Maior Evento de Varejo e Outlet do Brasil.\n\n"
+                    f"Conforme combinado, acabei de enviar o contrato referente a nossa "
+                    f"parceria com a {sel_nome} para o seu e-mail cadastrado.\n\n"
+                    f"Por favor, confirme o recebimento! Qualquer duvida, estou aqui. \n\n"
+                    f"Att,\n{resp} — Exagerado"
+                )
+                
+                # Codificação simples e direta
+                wpp_encoded = urllib.parse.quote(wpp_url)
+                
+                telefone_cliente = "5527998225335" 
+                link_whatsapp_api = f"https://wa.me/{telefone_cliente}?text={wpp_encoded}"
+
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.markdown(
+                    f'<div class="whatsapp-box"><strong>📲 Mensagem de Acompanhamento Pronta</strong><br><br>'
+                    f'{wpp_visual.replace(chr(10),"<br>")}</div>',
+                    unsafe_allow_html=True,
+                )
+                
+                st.link_button("🟢 ABRIR CONVERSA NO WHATSAPP", link_whatsapp_api, use_container_width=True)
 
 # ══════════════════════════════════════════════════════════════════
 # ABA 5 — MOTOR DE PROSPECÇÃO

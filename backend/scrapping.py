@@ -19,7 +19,6 @@ class InstagramProspector:
         self.session_file = f"session_{self.username}.json"
         self.logado = False
 
-        # Handler de challenge interativo — resolve SMS/email automaticamente
         self.cl.challenge_code_handler = self._challenge_code_handler
 
         if usar_proxy:
@@ -55,7 +54,6 @@ class InstagramProspector:
                 return
             except Exception as e:
                 print(f"❌ Sessão expirou: {e}")
-                # NUNCA tenta login com senha — só avisa
                 raise Exception(
                     "Sessão expirada. Rode o gerar_sessao.py novamente para renovar."
                 )

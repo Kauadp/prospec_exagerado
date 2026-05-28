@@ -724,7 +724,7 @@ with aba4:
                     
                     with col_f3:
                         st.markdown("**Enriquecimento Operacional:**")
-                        stand = st.text_input("🏪 Stand (Endereço)", placeholder="Ex: Setor A - 12", key=f"stand_{cp['id_solicitacao']}")
+                        stand = st.text_input("🏪 Stand (Endereço)", placeholder="Ex: Stand A12", key=f"stand_{cp['id_solicitacao']}")
                         metragem = st.number_input("📐 Metragem (m²)", min_value=0.0, step=1.0, key=f"metra_{cp['id_solicitacao']}")
                         receita = st.number_input("💰 Valor do Stand (R$)", min_value=0.0, step=100.0, key=f"rec_{cp['id_solicitacao']}")
 
@@ -742,7 +742,7 @@ with aba4:
                                 sucesso = db_vincular_e_enriquecer(
                                     id_solicitacao=cp['id_solicitacao'],
                                     lead_id=id_lead_real,
-                                    stand=stand,
+                                    stand=stand.upper(),
                                     metragem=metragem,
                                     receita=receita
                                 )

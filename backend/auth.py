@@ -1,35 +1,52 @@
-from instagrapi import Client
 import json
+import os
+from instagrapi import Client
 import streamlit as st
 
 USERNAME = st.secrets["account"]["USERNAME"]
-SESSION_ID = st.secrets["account"]["SESSION_ID"]
-DS_USER_ID = st.secrets["account"]["DS_USER_ID"]
+PASSWORD = st.secrets["account"].get("PASSWORD") 
+SESSION_FILE = f"session_{USERNAME}.json"
+
+def challenge_code_handler(username, choice):
+    """
+    Interceptor de segurança: se o Instagram pedir código por SMS ou E-mail,
+    o script pausa e deixa você digitar direto no terminal.
+    """
+    print(f"\n⚠️  O INSTAGRAM EXIGIU VERIFICAÇÃO DE SEGURANÇA PARA @{username}")
+    print(f"   Tipo de envio solicitado: {choice}")
+    code = input("   👉 Digite o código de verificação recebido: ").strip()
+    return code
 
 cl = Client()
-# Define device antes de setar a sessão
-cl.set_settings({
-    "device_settings": {
-        "app_version": "269.0.0.18.75",
-        "android_version": 26,
-        "android_release": "8.0.0",
-        "dpi": "480dpi",
-        "resolution": "1080x1920",
-        "manufacturer": "Google",
-        "device": "Pixel 8 Pro",
-        "model": "Pixel 8 Pro",
-        "cpu": "qcom",
-        "version_code": "314665256",
-    },
-    "cookies": {
-        "sessionid": SESSION_ID,
-        "ds_user_id": DS_USER_ID,
-    }
+
+cl.challenge_code_handler = challenge_code_handler
+
+cl.set_device({
+    "app_version": "269.0.0.18.75",
+    "android_version": 26,
+    "android_release": "8.0.0",
+    "dpi": "480dpi",
+    "resolution": "1080x1920",
+    "manufacturer": "Google",
+    "device": "Pixel 8 Pro",
+    "model": "Pixel 8 Pro",
+    "cpu": "qcom",
+    "version_code": "314665256"
 })
 
-cl.login_by_sessionid(SESSION_ID)
+PROXY = "http://iifruwho:2c9kdhxfs5p7@38.154.203.95:5863"
 
-with open(f"session_{USERNAME}.json", "w") as f:
-    json.dump(cl.get_settings(), f)
+print("🚀 Iniciando fluxo de autenticação...")
 
-print("✅ Sessão salva!")
+try:
+    print(f"🔐 Tentando logar na conta: @{USERNAME}...")
+    cl.set_proxy(PROXY)
+    print(f"Proxy ativado para a geração da sessão: {PROXY.split('@')[-1]}")
+    cl.login(USERNAME, PASSWORD)
+    
+    cl.dump_settings(SESSION_FILE)
+    print(f"\n✅ SUCESSO! Sessão estruturada gerada e salva em: {SESSION_FILE}")
+    print("Agora o seu scrapping.py conseguirá rodar usando essa credencial sem disparar blocks.")
+
+except Exception as e:
+    print(f"\n❌ Erro crítico ao tentar autenticar: {e}")

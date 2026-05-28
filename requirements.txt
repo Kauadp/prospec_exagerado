@@ -9,3 +9,5 @@ babel
 num2words
 docxtpl
 openpyxl
+googlemaps 
+requests

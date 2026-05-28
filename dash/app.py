@@ -929,42 +929,61 @@ with aba4:
                     st.error(f"❌ Falha no envio da Autentique: {resultado['mensagem']}")
 
 # ══════════════════════════════════════════════════════════════════
-# ABA 5 — MOTOR DE PROSPECÇÃO
+# ABA 5 — MOTOR DE PROSPECÇÃO INTELIGENTE (X + GOOGLE MAPS)
 # ══════════════════════════════════════════════════════════════════
+from backend.prospector import LeadProspector
 
 with aba5:
 
-    st.markdown("### 🔍 Motor de Prospecção — Instagram")
-
-    st.warning(
-        "⚠️ **[STATUS — EM MANUTENÇÃO]** "
-        "O motor de busca do Instagram está em aquecimento de IP de segurança. "
-        "Use o CRM abaixo enquanto os robôs descansam! ☕🤖"
+    st.markdown("### 🚀 Mapeador Comercial Inteligente")
+    st.markdown(
+        "Este motor analisa o *buzz* e as tendências regionais em tempo real no **X (Twitter)** "
+        "e cruza os dados com estabelecimentos físicos mapeados via **Google Places API**."
     )
 
     st.markdown("---")
-    st.markdown("#### ⚙️ Configurar Nova Busca")
+    st.markdown("#### ⚙️ Configurar Nova Busca Regional")
 
     cs1, cs2 = st.columns(2)
     with cs1:
         seg_busca = st.selectbox("🏷️ Segmento-Alvo", list(MAPA_SEGMENTOS.keys()), key="seg_p")
-        st.caption("Termos: " + ", ".join(MAPA_SEGMENTOS[seg_busca]["termos_bio"][:3]) + "…")
+        st.caption("Filtros de nicho: " + ", ".join(MAPA_SEGMENTOS[seg_busca]["termos_bio"][:3]) + "…")
     with cs2:
+        # Aproveita o seu MAPA_REGIOES existente
         reg_busca = st.selectbox("📍 Região-Alvo", list(MAPA_REGIOES.keys()), key="reg_p")
-        hashtag = "#" + MAPA_SEGMENTOS[seg_busca]["prefixo"] + MAPA_REGIOES[reg_busca]["sufixo_hashtag"].replace("#", "")
-        st.caption(f"Hashtag gerada: **{hashtag}**")
+        st.caption(f"Buscando em: **{reg_busca} — ES**")
 
-    co1, co2, co3 = st.columns(3)
-    with co1: st.number_input("🎯 Mín. Seguidores", min_value=0, value=500, step=100, disabled=True)
-    with co2: st.number_input("📸 Mín. Posts",      min_value=0, value=12,  step=1,   disabled=True)
-    with co3: st.number_input("⚡ Leads/rodada",    min_value=1, value=50,  step=10,  disabled=True)
+    st.markdown("##### 🎯 Filtros de Qualificação Comercial")
+    co1, co2 = st.columns(2)
+    with co1: 
+        rating_minimo = st.slider("⭐ Nota Mínima no Google Maps", min_value=1.0, max_value=5.0, value=3.5, step=0.1)
+    with co2: 
+        limite_leads = st.number_input("⚡ Limite de estabelecimentos/rodada", min_value=1, max_value=20, value=5, step=1)
+        st.caption("🔍 Mantenha estável para controle de cota da API.")
 
     st.markdown("<br>", unsafe_allow_html=True)
     cb_run, _ = st.columns([1, 3])
     with cb_run:
-        st.button("🚀 Iniciar Motor", disabled=True, use_container_width=True)
+        bt_disparar = st.button("🚀 Iniciar Motor", use_container_width=True, type="primary")
 
-    st.info("🛠️ **Próxima sprint:** Instaloader + Playwright + PostgreSQL. IP em aquecimento.")
+    if bt_disparar:
+        prospector = LeadProspector()
+        
+        with st.spinner(f"🕵️‍♂️ Minerando tendências no X e mapeando empresas em {reg_busca}..."):
+            try:
+                # Dispara a esteira que você codou ontem/hoje
+                novos_leads = prospector.executar_fluxo_prospeccao(
+                    segmento=seg_busca.lower(), 
+                    cidade_regiao=reg_busca
+                )
+                
+                if novos_leads > 0:
+                    st.success(f"🔥 SUCESSO! Mapeamos {novos_leads} novos leads qualificados para o time comercial!")
+                    st.balloons()
+                else:
+                    st.warning("ℹ️ A varredura foi concluída, mas todos os estabelecimentos encontrados já constavam no banco.")
+            except Exception as e:
+                st.error(f"❌ Erro ao rodar a esteira: {e}")
 
     st.markdown("---")
     st.markdown("#### 📒 Leads já registrados neste segmento")
@@ -978,7 +997,7 @@ with aba5:
                 f"— {_fmt_date(l.get('data_reuniao'))} — {l.get('estado','—')}"
             )
     else:
-        st.markdown(f"Nenhum lead em **{seg_busca}** ainda. Cadastre pelo formulário! 🎯")
+        st.markdown(f"Nenhum lead em **{seg_busca}** ainda. Rode o motor ou cadastre manualmente! 🎯")
 
 # ──────────────────────────────────────────────────────────────────
 # FOOTER

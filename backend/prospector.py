@@ -3,7 +3,6 @@ import random
 from LeIA import SentimentIntensityAnalyzer
 from backend.conector_google import ConectorGoogleMaps
 from backend.db_repository import BancoDadosManager
-# Importe o seu mapa de constantes (ajuste o caminho do arquivo se necessário)
 from dash.maps import MAPA_SEGMENTOS 
 
 class LeadProspector:

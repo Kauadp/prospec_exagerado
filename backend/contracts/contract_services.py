@@ -305,9 +305,11 @@ class ContractService:
                     if contrato["lead_id"]:
                         cur.execute("UPDATE leads SET status = 'Contrato Enviado', atualizado_em = NOW() WHERE id = %s", (contrato["lead_id"],))
                         cur.execute("""
-                            INSERT INTO historico_transicoes (lead_id, status_anterior, status_novo, criado_em) 
+                            INSERT INTO lead_status_history (lead_id, status_anterior, status_novo, criado_em) 
                             VALUES (%s, 'Tô Dentro', 'Contrato Enviado', NOW())
                         """, (contrato["lead_id"],))
+            
+                conn.commit()
             
                 conn.commit()
 

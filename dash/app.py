@@ -3,6 +3,7 @@ from anyio import Path
 import streamlit as st
 import pandas as pd
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 import time
 import theme
 import plotly.express as px
@@ -408,7 +409,7 @@ with aba3:
                     key="dash_vend_exec"
                 )
 
-        hoje_dt = date.today()
+        hoje_dt = datetime.now(ZoneInfo("America/Sao_Paulo")).date()
         
         if filtro_tempo == "Hoje":
             df_hist_filtrado = df_hist[df_hist['criado_em'].dt.date == hoje_dt] if not df_hist.empty else pd.DataFrame()

@@ -751,6 +751,7 @@ with aba4:
                         stand = st.text_input("🏪 Stand (Endereço)", placeholder="Ex: Stand A12", key=f"stand_{cp['id_solicitacao']}")
                         metragem = st.number_input("📐 Metragem (m²)", min_value=0.0, step=1.0, key=f"metra_{cp['id_solicitacao']}")
                         receita = st.number_input("💰 Valor do Stand (R$)", min_value=0.0, step=100.0, key=f"rec_{cp['id_solicitacao']}")
+                        comissao_pct = st.number_input("🔥 Comissão (%)", min_value=0.0, max_value=100.0, step=0.5, value=0.0, key=f"comissao_{cp['id_solicitacao']}")
 
                     b_salvar, _ = st.columns([1, 3])
                     with b_salvar:

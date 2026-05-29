@@ -128,8 +128,10 @@ class ContractService:
     # APENAS GERAR A MINUTA EM WORD (.DOCX)
     # ══════════════════════════════════════════════════════════════════
     def gerar_apenas_docx(self, id_solicitacao: int) -> tuple:
-        """Busca os dados no Postgres, renderiza o template e salva o arquivo .docx físico."""
+        """Busca os dados enriquecidos no banco, calcula a comissão e extensos, e gera o .docx."""
         try:
+            from num2words import num2words
+            
             with obter_conexao() as conn:
                 with conn.cursor() as cur:
                     cur.execute("SELECT * FROM contratos_pendentes WHERE id = %s", (id_solicitacao,))
@@ -141,44 +143,82 @@ class ContractService:
             modulo_dados = __import__(f"backend.contracts.dados_evento.{self.sigla_evento.lower()}", fromlist=[""])
             dados_tipo = modulo_dados.evento_stand if contrato["tipo_stand"] == "STAND" else modulo_dados.evento_food
 
-            valor_numeric = float(contrato["valor_total"])
+            valor_numeric = float(contrato["valor_total"] or 0.0)
+            comissao_pct = float(contrato.get("comissao_porcentagem", 0.0) or 0.0)
+            
             entrada_numeric = valor_entrada(valor_numeric)
             restante_numeric = valor_restante(valor_numeric)
 
             expositor_context = {
+                #### DADOS CADASTRAIS ####
                 "EXPOSITOR": contrato["razao_social"],
                 "NOMEFANTASIAEXPOSITOR": contrato["nome_fantasia"],
                 "CNPJEXPOSITOR": contrato["cnpj"],
                 "INSCRICAOESTADUALEXPOSITOR": contrato["inscricao_estadual"],
                 "ENDERECOSEDEEXPOSITOR": contrato["endereco_comercial"],
-                "FUNCAOCONTRATUALEXPOSITOR": "Proprietario",
+                "FUNCAOCONTRATUALEXPOSITOR": "Proprietário",
                 "RESPONSAVELCONTRATUALEXPOSITOR": contrato["nome_socio"],
                 "CPFRESPONSAVELCONTRATUALEXPOSITOR": contrato["cpf_socio"],
                 "RGRESPONSALVELCONTRATUALEXPOSITOR": contrato["rg_socio"],
                 "LISTADEMARCAS": contrato["marcas_expositor"],
+                
+                #### DADOS OPERACIONAIS ENRIQUECIDOS PONTUALMENTE ####
                 "STANDNUMERO": contrato["stand_endereco"],
                 "EXPOSITORAREASTAND": contrato["metragem"],
+                
+                #### DINÂMICA DE VALORES ####
                 "VALORTOTALALUGUELSTAND": formatar_real(valor_numeric),
                 "ENTRADAVALOR": formatar_real(entrada_numeric),
                 "VALORRESTANTE": formatar_real(restante_numeric),
+                "VALOREXTENSO": num2words(valor_numeric, lang="pt_BR") + " reais",
+                
+                #### COMPATIBILIDADE FOOD ####
                 "DOCUMENTOREPRESENTENTAEXPOSITOR": contrato["nome_fantasia"],
                 "DOCUMENTOEXPOSITOR": contrato["cpf_socio"],
                 "RAZAOEXPOSITOR2": contrato["razao_social"],
                 "DOCUMENTOEXPOSITOR2": contrato["cpf_socio"]
             }
 
+            eh_comissionado = bool(contrato.get("eh_comissionado", False))
+            comissao_pct = float(contrato.get("percentual_comissao", 0.0) or 0.0)
+            valor_total_comissionado = contrato.get("valor_total_comissionado")
+
+            if eh_comissionado or comissao_pct > 0.0:
+                if not valor_total_comissionado and comissao_pct > 0.0:
+                    valor_total_comissionado = valor_numeric / (comissao_pct / 100.0)
+                else:
+                    valor_total_comissionado = float(valor_total_comissionado or 0.0)
+
+                expositor_context.update({
+                    "PERCENTUALCOMISSAO": f"{comissao_pct:g}%",
+                    "PERCENTUALCOMISSAODECIMAL": comissao_pct / 100.0,
+                    "VALORTOTALCOMISSIONADO": formatar_real(valor_total_comissionado),
+                    "VALORTOTALCOMISSIONADONUMERICO": valor_total_comissionado,
+                    "VALORTOTALCOMISSIONADOEXTENSO": num2words(valor_total_comissionado, lang="pt_BR") + " reais",
+                    "EHCOMISSIONADO": True
+                })
+                comissao_suffix = "_comissionado"
+            else:
+                expositor_context.update({
+                    "PERCENTUALCOMISSAO": "",
+                    "PERCENTUALCOMISSAODECIMAL": None,
+                    "VALORTOTALCOMISSIONADO": "",
+                    "VALORTOTALCOMISSIONADONUMERICO": None,
+                    "VALORTOTALCOMISSIONADOEXTENSO": "",
+                    "EHCOMISSIONADO": False
+                })
+                comissao_suffix = ""
+
             context = {**dados_tipo, **expositor_context}
 
-            # Mapeia template
             pagamento_prefix = "parcelado" if "PARCELADO" in contrato["forma_pagamento"].upper() else "avista"
             tipo_prefix = "food_" if contrato["tipo_stand"] == "FOOD" else ""
-            nome_template = f"template_{tipo_prefix}{pagamento_prefix}_{self.sigla_evento.lower()}.docx"
+            nome_template = f"template_{tipo_prefix}{pagamento_prefix}{comissao_suffix}_{self.sigla_evento.lower()}.docx"
             
             caminho_template = os.path.join("template", nome_template)
             if not os.path.exists(caminho_template):
                 return False, f"Template {nome_template} não localizado."
 
-            # Renderiza
             doc = DocxTemplate(caminho_template)
             doc.render(context)
 
@@ -187,16 +227,15 @@ class ContractService:
             caminho_docx = os.path.join("contratos", f"{nome_base}.docx")
             
             doc.save(caminho_docx)
-            caminho_libreoffice_windows = r"C:\Program Files\LibreOffice\program\soffice.exe"
             
+            caminho_libreoffice_windows = r"C:\Program Files\LibreOffice\program\soffice.exe"
             tem_windows_libre = os.path.exists(caminho_libreoffice_windows)
             tem_linux_libre = subprocess.run(["which", "libreoffice"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0 if os.name != 'nt' else False
 
             if tem_windows_libre or tem_linux_libre:
                 comando_cmd = [caminho_libreoffice_windows, "--headless", "--convert-to", "pdf", "--outdir", "contratos", caminho_docx] if tem_windows_libre else ["libreoffice", "--headless", "--convert-to", "pdf", "--outdir", "contratos", caminho_docx]
                 subprocess.run(comando_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            else:
-                print("[AVISO DEVELOPMENT] LibreOffice não localizado. Pulando geração do PDF de preview.")
+            
             return True, caminho_docx
 
         except Exception as e:

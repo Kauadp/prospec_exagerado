@@ -38,7 +38,7 @@ class ContractService:
             callback_log("📥 Conectando ao OneDrive/SharePoint do Rio de Janeiro...")
 
         try:
-            df = carregar_expositores(url=url_planilha).head(2)
+            df = carregar_expositores(url=url_planilha)
             if callback_log:
                 callback_log(f"📋 Planilha importada com sucesso! Encontradas {len(df)} empresas com status 'Aguardando'.")
         except Exception as e:

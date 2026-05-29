@@ -108,7 +108,7 @@ with aba1:
 
     agend_count_sem = sum(1 for l in leads_prog if l.get("status") != "Perda / Caiu")
     
-    hoje = date.today()
+    hoje = datetime.now(ZoneInfo("America/Sao_Paulo")).date()
     agend_count_dia = 0
     
     for l in leads_prog:

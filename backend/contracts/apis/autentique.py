@@ -41,15 +41,23 @@ def enviar_para_autentique(
     }
 
     query = """
-        mutation CreateDocument($file: Upload!, $document: DocumentInput!, $signers: [SignerInput!]!) {
-        createDocument(file: $file, document: $document, signers: $signers) {
-            id
+    mutation RealizarDisparo($documento: DocumentInput!, $signatarios: [SignerInput!]!) {
+    createDocument(document: $documento, signers: $signatarios) {
+        id
+        name
+        signatures {
+        public_id
+        name
+        email
+        action {
             name
-            signers {
-            url
-            }
+        }
+        link {
+            short_link
         }
         }
+    }
+    }
     """
 
     operations = {

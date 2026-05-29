@@ -292,11 +292,11 @@ class ContractService:
                 return {"status": "erro", "mensagem": f"Erro na API da Autentique: {resposta_api['errors']}"}
             
             try:
-                dados_assinantes = resposta_api["data"]["createDocument"]["signers"]
-                link_assinatura = dados_assinantes[0]["url"] if dados_assinantes else None
+                dados_assinantes = resposta_api["data"]["createDocument"]["signatures"]
+                link_assinatura = dados_assinantes[0]["link"]["short_link"] if dados_assinantes else None
             except (KeyError, IndexError, TypeError) as e:
-                print(f"Não foi possível extrair a URL da Autentique: {e}")
-                link_assinatura = "https://www.autentique.com.br" # Fallback se a API falhar
+                print(f"Não foi possível extrair a URL v3 da Autentique: {e}")
+                link_assinatura = "https://www.autentique.com.br"
 
             with obter_conexao() as conn:
                 with conn.cursor() as cur:

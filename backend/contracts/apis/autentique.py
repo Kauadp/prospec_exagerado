@@ -38,8 +38,8 @@ def enviar_para_autentique(
     }
 
     query = """
-    mutation RealizarDisparo($documento: DocumentInput!, $signatarios: [SignerInput!]!, $arquivo: Upload!) {
-      createDocument(document: $documento, signers: $signatarios, file: $arquivo) {
+    mutation CreateDocumentMutation($document: DocumentInput!, $signers: [SignerInput!]!, $file: Upload!) {
+      createDocument(document: $document, signers: $signers, file: $file) {
         id
         name
         signatures {

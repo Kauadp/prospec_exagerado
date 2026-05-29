@@ -70,8 +70,18 @@ class BancoDadosManager:
             raise KeyError("❌ URI do banco de dados não encontrada no secrets.toml!")
 
     def _get_conexao(self):
-        # Conecta direto usando a URI, sem precisar quebrar em host, user, etc.
         return psycopg2.connect(self.conn_string)
+    
+    def verificar_existencia_lead(self, place_id: str) -> bool:
+        """Verifica se o lead já foi prospectado anteriormente."""
+        query = "SELECT 1 FROM leads_prospecção_inteligente WHERE place_id_google = %s LIMIT 1;"
+        try:
+            with self._get_conexao() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(query, (place_id,))
+                    return cursor.fetchone() is not None
+        except Exception:
+            return False
 
     def salvar_lead(self, dados_lead: dict) -> bool:
         """Salva um único lead comercial aplicando o filtro de prevenção de duplicatas."""
@@ -87,14 +97,11 @@ class BancoDadosManager:
             ON CONFLICT (place_id_google) DO NOTHING;
         """
         
-        # 2. Usando o gerenciador de contexto 'with' igualzinho à classe LeadRepository!
-        # Isso garante que se der erro, o 'conn.rollback()' e o 'close()' acontecem sozinhos.
         try:
             with self._get_conexao() as conn:
                 with conn.cursor() as cursor:
                     cursor.execute(query, dados_lead)
-                    # No psycopg2, se houver ON CONFLICT DO NOTHING e o registro já existir,
-                    # o rowcount retorna 0. Se for inserido, retorna 1.
+
                     foi_inserido = cursor.rowcount > 0
                 conn.commit()
             return foi_inserido
@@ -102,3 +109,39 @@ class BancoDadosManager:
         except Exception as e:
             print(f"❌ Erro ao salvar lead no Postgres: {e}")
             return False
+    
+    def atualizar_curadoria_lead(self, lead_id: int, is_validado: bool, instagram: str = None) -> bool:
+        """
+        Atualiza o status de validação humana e o @instagram do lead 
+        após a triagem na interface.
+        """
+        query = """
+            UPDATE leads_prospecção_inteligente 
+            SET 
+                validado_por_humano = %s,
+                instagram = %s,
+                atualizado_em = NOW()
+            WHERE id = %s;
+        """
+        try:
+            with self._get_conexao() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(query, (is_validado, instagram, lead_id))
+                conn.commit()
+            print(f"✨ [Postgres] Curadoria do Lead ID {lead_id} atualizada com sucesso!")
+            return True
+        except Exception as e:
+            print(f"❌ Erro ao atualizar curadoria do lead {lead_id}: {e}")
+            return False
+        
+    def listar_todos_prospeccao(self) -> list[dict]:
+        """Retorna todos os leads minerados pela esteira de prospecção inteligente."""
+        query = "SELECT * FROM leads_prospecção_inteligente ORDER BY criado_em DESC;"
+        try:
+            with self._get_conexao() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
+                    cursor.execute(query)
+                    return cursor.fetchall()
+        except Exception as e:
+            print(f"❌ Erro ao listar histórico de prospecção: {e}")
+            return []

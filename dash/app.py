@@ -44,7 +44,7 @@ st.set_page_config(
 theme.apply()
 
 # ──────────────────────────────────────────────────────────────────
-# 3. INICIALIZAÇÃO DO SESSION STATE
+#  INICIALIZAÇÃO DO SESSION STATE
 # ──────────────────────────────────────────────────────────────────
 
 def _init_state() -> None:
@@ -62,7 +62,7 @@ theme.render_page_header(
 )
 
 # ──────────────────────────────────────────────────────────────────
-# 6. ABAS
+#  ABAS
 # ──────────────────────────────────────────────────────────────────
 
 aba1, aba2, aba3, aba4, aba5 = st.tabs([
@@ -145,7 +145,6 @@ with aba1:
     st.markdown('<p style="font-size:0.75rem; font-weight:600; margin-bottom:-5px; color:#5C3D7A; margin-top:10px;">Progresso Semanal</p>', unsafe_allow_html=True)
     st.progress(pct_sem)
 
-    # Alertas de sucesso baseados em metas reais atingidas
     if meta_sem_ok:
         st.success(f"🎊 **{label_prog}** zerou a meta da semana! Que time fantástico! 💪")
     elif meta_dia_ok:
@@ -371,12 +370,9 @@ with aba2:
 # ABA 3 — DASHBOARD
 # ══════════════════════════════════════════════════════════════════
 
-# Certifique-se de ter importado lá no topo: import plotly.express as px
-
 with aba3:
     st.markdown("### 📊 Dashboard de Performance")
     
-    # 1. CARREGAMENTO DOS DATASETS
     todos_leads = _db_listar_leads()
     vendedoras  = _todos_vendedores()
     agendadores = _todos_agendadores()
@@ -393,7 +389,7 @@ with aba3:
         st.info("Sem dados ainda. Cadastre leads pela aba **🚀 Novo Agendamento**.")
     else:
         # ──────────────────────────────────────────────────────────
-        # SEÇÃO 1: PAINEL GERENCIAL (O QUE O GUSTAVO QUER VER)
+        # SEÇÃO 1: PAINEL GERENCIAL
         # ──────────────────────────────────────────────────────────
         st.subheader("🎯 Visão Executiva e Controle de Metas")
         
@@ -462,7 +458,7 @@ with aba3:
         with k3: theme.render_dash_card("Contratos Assinados 🏆", str(assinados_f1), f"Conversão: {tx_fec_f1}", C.get("gold", "#FFD700"))
         with k4: theme.render_dash_card("Leads Perdidos", str(perdas_f1), "caíram do funil", C.get("red", "#FF0000"))
 
-        # ── 🚀 GRÁFICO DE FUNIL DO PLOTLY ──
+        # ──  GRÁFICO DE FUNIL DO PLOTLY ──
         st.markdown("#### 🏷️ Funil Volumétrico de Conversão (Movimentação do Período)")
         
         if not df_hist_filtrado.empty:
@@ -477,7 +473,6 @@ with aba3:
             cnt_envia  = max(cnt_envia, cnt_assina)
             cnt_agend  = max(cnt_agend, cnt_reuniu)
         else:
-            # Fallback seguro caso o histórico esteja zerado (Primeiros testes)
             cnt_assina = sum(1 for l in leads_criados_periodo if l.get("status") == "Contrato Assinado")
             cnt_envia  = sum(1 for l in leads_criados_periodo if l.get("status") == "Contrato Enviado") + cnt_assina
             cnt_dentro = sum(1 for l in leads_criados_periodo if l.get("status") == "Tô Dentro") + cnt_envia
@@ -508,7 +503,7 @@ with aba3:
         st.plotly_chart(fig_funnel, use_container_width=True)
 
 
-        # ── 👥 TABELA DE PERFORMANCE ──
+        # ── TABELA DE PERFORMANCE ──
         st.markdown("#### 👥 Desempenho Acumulado por Agendadora")
         rows = []
         
@@ -608,7 +603,7 @@ with aba3:
 # ══════════════════════════════════════════════════════════════════
 # ABA 4 — CONTRATOS (AUTOMATIZAÇÃO INTEGRADA)
 # ══════════════════════════════════════════════════════════════════
-import urllib.parse  # Para codificar o texto do WhatsApp de forma segura
+import urllib.parse
 from db_dash import obter_eventos_disponiveis
 from db_dash import obter_servico_contratos
 with aba4:
@@ -616,7 +611,6 @@ with aba4:
     st.caption("Central de Ingestão do Excel 365, Validação Cadastral e Assinatura Digital.")
     EVENTOS, EVENTO_PADRAO = obter_eventos_disponiveis()
 
-    # 1. BOTÃO DE INGESTÃO DO EXCEL 365
     c_sync, c_logs = st.columns([1, 3])
     with c_sync:
         opcao_evento = st.selectbox(
@@ -631,7 +625,6 @@ with aba4:
         st.markdown("**🖥️ Monitor de Execução (Fase 1)**")
         ecra_logs = st.empty()
         
-        # Estado inicial do ecrã (Aguardando)
         estilo_terminal_espera = (
             '<div style="background-color: #0e1117; border: 1px solid #4d4d4d; '
             'border-radius: 5px; padding: 12px; font-family: monospace; color: #a3b8cc; '
@@ -641,16 +634,13 @@ with aba4:
         )
         ecra_logs.markdown(estilo_terminal_espera, unsafe_allow_html=True)
 
-    # Lógica disparada ao clicar no botão
     if botao_disparar:
         try:
-            # Lista dinâmica que vai acumular as linhas de texto na tela
             logs_vivos = ["🚀 Iniciando varredura na planilha do Excel 365..."]
             
             def atualizar_log_na_tela(texto_novo):
                 """Adiciona o novo log à lista e atualiza o container HTML em tempo real"""
                 logs_vivos.append(texto_novo)
-                # Pega as últimas 4 mensagens para manter o terminal compacto
                 linhas_finais = "<br>".join(logs_vivos[-4:])
                 ecra_logs.markdown(
                     f'<div style="background-color: #0e1117; border: 1px solid #ff4b4b; '
@@ -660,9 +650,7 @@ with aba4:
                     unsafe_allow_html=True
                 )
 
-            # Executa o spinner visual padrão do Streamlit por fora
             with st.spinner(f"Processando planilha de {opcao_evento}..."):
-                # 🔥 AQUI ESTÁ O SEGREDO: Passamos a sigla E a função que atualiza a tela!
                 retorno = obter_servico_contratos(sigla_evento=opcao_evento, callback_log=atualizar_log_na_tela)
             
             if retorno.get("status") == "sucesso":
@@ -674,7 +662,6 @@ with aba4:
                         for alerta in retorno["alertas"]:
                             st.warning(alerta)
                 
-                # Dá 2 segundos para o usuário ler o veredito final no ecrã antes de recarregar a página
                 time.sleep(2)
                 st.rerun()
                 
@@ -686,7 +673,6 @@ with aba4:
 
     st.markdown("---")
 
-    # 2. ABA INTERNA: SEPARAÇÃO DO FLUXO OPERACIONAL
     sub_aba_vincular, sub_aba_gerar = st.tabs(["🔍 1. Casar e Enriquecer Leads", "📄 2. Gerar e Disparar Contrato"])
 
     # ──────────────────────────────────────────────────────────────
@@ -714,7 +700,6 @@ with aba4:
                                     f"- **CNPJ Validado:** {cp['cnpj']}")
                     
                     with col_f2:
-                        # Seletor para o casamento humano infalível puxando do banco real
                         opcoes_crm = [f"{l['id']} - {l['nome_fantasia']}" for l in leads_no_todentro]
                         lead_selecionado = st.selectbox(
                             "🤝 Selecione o Lead correspondente no CRM:",
@@ -728,17 +713,14 @@ with aba4:
                         metragem = st.number_input("📐 Metragem (m²)", min_value=0.0, step=1.0, key=f"metra_{cp['id_solicitacao']}")
                         receita = st.number_input("💰 Valor do Stand (R$)", min_value=0.0, step=100.0, key=f"rec_{cp['id_solicitacao']}")
 
-                    # Botão para salvar tudo na tabela unica contratos_pendentes mudando status para 'Pronto para Gerar'
                     b_salvar, _ = st.columns([1, 3])
                     with b_salvar:
                         if st.button("💾 Salvar e Validar", key=f"btn_salvar_{cp['id_solicitacao']}", use_container_width=True):
                             if lead_selecionado == "-- Escolha o Lead do CRM --" or not stand.strip():
                                 st.error("❌ É obrigatório vincular o lead do CRM e preencher o endereço do Stand.")
                             else:
-                                # Divide a string do selectbox ("ID - Nome") para pegar apenas o número inteiro do ID
                                 id_lead_real = int(lead_selecionado.split(" - ")[0])
                                 
-                                # Executa a query real no Postgres salvando o estado
                                 sucesso = db_vincular_e_enriquecer(
                                     id_solicitacao=cp['id_solicitacao'],
                                     lead_id=id_lead_real,
@@ -761,7 +743,6 @@ with aba4:
         st.markdown("#### ⚡ Emissão de Contratos em Lote / Individual")
         st.caption("Geração de templates DOCX, conversão estável para PDF e upload na Autentique.")
 
-        # 1. PEGA OS DADOS REAIS DO POSTGRES DE QUEM ESTÁ 'Pronto para Gerar'
         from db_dash import db_listar_contratos_prontos_para_gerar
         from backend.contracts.contract_services import ContractService
 
@@ -770,7 +751,6 @@ with aba4:
         if not leads_contrato:
             st.warning("Nenhum lead pronto para emissão de contrato. Trate-os na aba ao lado! 💜")
         else:
-            # Exibe o grid com o que já está na agulha vindo do banco real
             df_ct = pd.DataFrame([
                 {
                     "ID Solicitação": l["id_solicitacao"],
@@ -786,17 +766,14 @@ with aba4:
 
             st.markdown("---")
             
-            # Seletor baseado no Nome Fantasia
             sel_nome = st.selectbox(
                 "Selecione o Lead para Emissão",
                 options=[l["nome_fantasia"] for l in leads_contrato],
                 key="sel_emissao_final"
             )
-            # Pega o dicionário do lead selecionado
             sel = next(l for l in leads_contrato if l["nome_fantasia"] == sel_nome)
             id_solic = sel["id_solicitacao"]
 
-            # Chaves exclusivas no session_state para controlar os botões deste ID específico
             key_gerado = f"word_pronto_{id_solic}"
             key_path = f"word_path_{id_solic}"
             
@@ -804,12 +781,10 @@ with aba4:
                 st.session_state[key_gerado] = False
                 st.session_state[key_path] = ""
 
-            # Colunas de botões: Gerar Word na esquerda, Enviar para Autentique na direita
             cb1, cb2 = st.columns([1, 1])
             
             with cb1:
                 import os
-                # BOTÃO 1: APENAS GERAR O WORD
                 if st.button("📄 1. Gerar Minuta Word", use_container_width=True):
                     with st.spinner("Construindo arquivo DOCX preenchido..."):
                         service = ContractService(sigla_evento=opcao_evento)
@@ -929,16 +904,17 @@ with aba4:
                     st.error(f"❌ Falha no envio da Autentique: {resultado['mensagem']}")
 
 # ══════════════════════════════════════════════════════════════════
-# ABA 5 — MOTOR DE PROSPECÇÃO INTELIGENTE (X + GOOGLE MAPS)
+# ABA 5 — MOTOR DE PROSPECÇÃO INTELIGENTE (GOOGLE MAPS ENTERPRISE)
 # ══════════════════════════════════════════════════════════════════
 from backend.prospector import LeadProspector
+import pandas as pd
 
 with aba5:
-
     st.markdown("### 🚀 Mapeador Comercial Inteligente")
     st.markdown(
-        "Este motor analisa o *buzz* e as tendências regionais em tempo real no **X (Twitter)** "
-        "e cruza os dados com estabelecimentos físicos mapeados via **Google Places API**."
+        "Este motor executa varreduras geográficas profundas utilizando a **Google Places API (New)**. "
+        "Ele extrai estabelecimentos reais, calcula o volume de mercado, analisa o sentimento das avaliações dos clientes "
+        "com NLP (LeIA) e gera um score automático de maturidade comercial."
     )
 
     st.markdown("---")
@@ -947,57 +923,136 @@ with aba5:
     cs1, cs2 = st.columns(2)
     with cs1:
         seg_busca = st.selectbox("🏷️ Segmento-Alvo", list(MAPA_SEGMENTOS.keys()), key="seg_p")
-        st.caption("Filtros de nicho: " + ", ".join(MAPA_SEGMENTOS[seg_busca]["termos_bio"][:3]) + "…")
+        st.caption("Matriz de expansão ativa: " + ", ".join(MAPA_SEGMENTOS[seg_busca]["termos_bio"][:3]) + "…")
     with cs2:
-        # Aproveita o seu MAPA_REGIOES existente
         reg_busca = st.selectbox("📍 Região-Alvo", list(MAPA_REGIOES.keys()), key="reg_p")
-        st.caption(f"Buscando em: **{reg_busca} — ES**")
+        st.caption(f"Buscando em: **{reg_busca}**")
 
     st.markdown("##### 🎯 Filtros de Qualificação Comercial")
     co1, co2 = st.columns(2)
     with co1: 
         rating_minimo = st.slider("⭐ Nota Mínima no Google Maps", min_value=1.0, max_value=5.0, value=3.5, step=0.1)
     with co2: 
-        limite_leads = st.number_input("⚡ Limite de estabelecimentos/rodada", min_value=1, max_value=20, value=5, step=1)
-        st.caption("🔍 Mantenha estável para controle de cota da API.")
+        limite_leads = st.number_input("⚡ Limite de estabelecimentos novos por rodada", min_value=1, max_value=20, value=5, step=1)
+        st.caption("🔍 Controla rigidamente a cota gratuita do Google Cloud.")
 
     st.markdown("<br>", unsafe_allow_html=True)
     cb_run, _ = st.columns([1, 3])
     with cb_run:
         bt_disparar = st.button("🚀 Iniciar Motor", use_container_width=True, type="primary")
 
+    if "leads_rodada_atual" not in st.session_state:
+        st.session_state.leads_rodada_atual = []
+
     if bt_disparar:
         prospector = LeadProspector()
         
-        with st.spinner(f"🕵️‍♂️ Minerando tendências no X e mapeando empresas em {reg_busca}..."):
+        with st.spinner(f"🕵️‍♂️ Varrendo Google Maps e processando inteligência de mercado em {reg_busca}..."):
             try:
-                # Dispara a esteira que você codou ontem/hoje
                 novos_leads = prospector.executar_fluxo_prospeccao(
-                    segmento=seg_busca.lower(), 
-                    cidade_regiao=reg_busca
+                    segmento=seg_busca,
+                    cidade_regiao=reg_busca,
+                    limite_leads=int(limite_leads)
                 )
                 
                 if novos_leads > 0:
                     st.success(f"🔥 SUCESSO! Mapeamos {novos_leads} novos leads qualificados para o time comercial!")
                     st.balloons()
+                    
+                    todos_leads_banco = prospector.db.listar_todos_prospeccao() 
+                    st.session_state.leads_rodada_atual = [l for l in todos_leads_banco if l.get("segmento") == seg_busca][:novos_leads]
                 else:
-                    st.warning("ℹ️ A varredura foi concluída, mas todos os estabelecimentos encontrados já constavam no banco.")
+                    st.warning("ℹ️ A varredura foi concluída, mas todos os estabelecimentos encontrados nessa área já constavam no banco.")
+                    st.session_state.leads_rodada_atual = []
             except Exception as e:
                 st.error(f"❌ Erro ao rodar a esteira: {e}")
 
-    st.markdown("---")
-    st.markdown("#### 📒 Leads já registrados neste segmento")
+    # ══════════════════════════════════════════════════════════════════
+    # 🕵️‍♂️ ESTEIRA DE CURADORIA E VALIDAÇÃO HUMANA
+    # ══════════════════════════════════════════════════════════════════
+    if st.session_state.leads_rodada_atual:
+        st.markdown("---")
+        st.markdown("#### 🛠️ Triagem de Leads Encontrados (Validação Humana)")
+        st.info("💡 Analise os dados capturados abaixo. Marque a caixinha **'Qualificado?'** para validar o lead antes de enviar ao CRM principal.")
 
-    leads_seg = [l for l in _db_listar_leads() if l.get("segmento") == seg_busca]
+        df_rodada = pd.DataFrame(st.session_state.leads_rodada_atual)
+        
+        df_rodada["instagram"] = df_rodada["instagram"].fillna("").apply(lambda x: x if x.strip() != "" else "Não Encontrado")
+        df_rodada["site"] = df_rodada["site"].fillna("").apply(lambda x: x if x.strip() != "" else "Não Encontrado")
+        df_rodada["telefone"] = df_rodada["telefone"].fillna("").apply(lambda x: x if x.strip() != "" else "Não Encontrado")
+        
+        df_exibir = df_rodada[[
+            "id", "nome_empresa", "score_heuristico", "rating_maps", 
+            "total_reviews", "sentimento_reviews_medio", "telefone", "site", "instagram", "validado_por_humano"
+        ]].copy()
+        
+        df_exibir.columns = [
+            "ID", "Nome da Empresa", "Score 🔥", "Nota ⭐", 
+            "Avaliações 💬", "Sentimento 🧠", "Telefone", "Website", "Instagram (@)", "Qualificado?"
+        ]
+
+        df_editado = st.data_editor(
+            df_exibir,
+            hide_index=True,
+            width=None, 
+            disabled=["ID", "Nome da Empresa", "Score 🔥", "Nota ⭐", "Avaliações 💬", "Sentimento 🧠", "Telefone", "Website"],
+            column_config={
+                "ID": st.column_config.NumberColumn(format="%d"),
+                "Score 🔥": st.column_config.NumberColumn(format="%.2f"),
+                "Sentimento 🧠": st.column_config.NumberColumn(format="%.2f"),
+                "Website": st.column_config.TextColumn(),
+                "Qualificado?": st.column_config.CheckboxColumn(help="Marque se a empresa passou na sua avaliação visual")
+            }
+        )
+
+        if st.button("💾 Salvar Validação da Rodada", type="secondary"):
+            prospector = LeadProspector()
+            sucessos_update = 0
+            
+            for _, row in df_editado.iterrows():
+                lead_id = int(row["ID"])
+                is_validado = bool(row["Qualificado?"])
+                
+                insta_handle = str(row["Instagram (@)"]).strip()
+                if insta_handle == "Não Encontrado" or insta_handle == "":
+                    insta_handle = None
+                
+                prospector.db.atualizar_curadoria_lead(lead_id, is_validado, insta_handle)
+                sucessos_update += 1
+                
+            st.success(f"✅ Curadoria salva! {sucessos_update} leads foram atualizados com as notas humanas.")
+            time.sleep(1)
+            st.rerun()
+
+    # ══════════════════════════════════════════════════════════════════
+    # LEADS HISTÓRICOS JÁ REGISTRADOS
+    # ══════════════════════════════════════════════════════════════════
+    st.markdown("---")
+    st.markdown("#### 📒 Histórico de Leads Inteligentes")
+
+    try:
+        from backend.db_repository import BancoDadosManager
+        db_manager = BancoDadosManager()
+        leads_seg = [l for l in db_manager.listar_todos_prospeccao() if l.get("segmento") == seg_busca]
+    except Exception:
+        leads_seg = [l for l in _db_listar_leads() if l.get("segmento") == seg_busca]
+
     if leads_seg:
-        st.markdown(f"**{len(leads_seg)} lead(s)** em **{seg_busca}**:")
-        for l in leads_seg:
-            st.markdown(
-                f"- **{l.get('nome_fantasia','—')}** — {l.get('status','—')} "
-                f"— {_fmt_date(l.get('data_reuniao'))} — {l.get('estado','—')}"
-            )
+        st.markdown(f"Temos **{len(leads_seg)} lead(s)** minerados para o segmento **{seg_busca}**:")
+        
+        df_hist = pd.DataFrame(leads_seg)
+        
+        df_hist["instagram"] = df_hist["instagram"].fillna("Não Encontrado")
+        df_hist["validado_por_humano"] = df_hist["validado_por_humano"].apply(lambda x: "✅ Sim" if x else "❌ Não")
+        
+        df_hist_exibir = df_hist[[
+            "nome_empresa", "score_heuristico", "rating_maps", "total_reviews", "telefone", "instagram", "validado_por_humano"
+        ]].copy()
+        df_hist_exibir.columns = ["Empresa", "Score 🔥", "Nota ⭐", "Reviews 💬", "Contato", "Instagram", "Validado?"]
+        
+        st.dataframe(df_hist_exibir, hide_index=True, use_container_width=True)
     else:
-        st.markdown(f"Nenhum lead em **{seg_busca}** ainda. Rode o motor ou cadastre manualmente! 🎯")
+        st.markdown(f"Nenhum lead em **{seg_busca}** ainda. Rode o motor para buscar dados reais no Google! 🎯")
 
 # ──────────────────────────────────────────────────────────────────
 # FOOTER

@@ -10,12 +10,10 @@ if str(diretorio_raiz) not in sys.path:
     sys.path.append(str(diretorio_raiz))
 
 from backend.db_repository import LeadRepository
-# 1. IMPORTA SUA NOVA CLASSE DE QUERIES ANALÍTICAS
 from backend.queries import DashboardQueries
 from backend.contracts.contract_services import ContractService
 from backend.contracts.config.eventos import EVENTOS, EVENTO_PADRAO
 
-# Instancia os dois motores com a string de conexão
 repo = LeadRepository(st.secrets["postgres"]["DATABASE_URL"])
 queries_dash = DashboardQueries(st.secrets["postgres"]["DATABASE_URL"])
 
@@ -29,7 +27,7 @@ def obter_servico_contratos(sigla_evento: str, callback_log=None) -> dict:
     return service.sincronizar_excel_para_postgres(callback_log=callback_log)
 
 # ──────────────────────────────────────────────────────────────────
-# 1. CAMADA DE CONTRATOS E SERVIÇOS (INGESTÃO & REGRAS DE NEGÓCIO)
+# CAMADA DE CONTRATOS E SERVIÇOS (INGESTÃO & REGRAS DE NEGÓCIO)
 # ──────────────────────────────────────────────────────────────────
 
 def obter_conexao():
@@ -110,7 +108,7 @@ def db_listar_contratos_prontos_para_gerar(sigla_evento: str) -> list:
             return cur.fetchall()
 
 # ──────────────────────────────────────────────────────────────────
-# 2. CAMADA DE DADOS OPERACIONAIS (CRM / KANBAN)
+# CAMADA DE DADOS OPERACIONAIS (CRM / KANBAN)
 # ──────────────────────────────────────────────────────────────────
 
 def _db_listar_leads() -> list[dict]:
@@ -126,7 +124,7 @@ def _db_atualizar_status(lead_id: int, novo_status: str, forms_enviado: bool | N
     repo.atualizar_status(lead_id, novo_status, forms_enviado)
 
 # ──────────────────────────────────────────────────────────────────
-# 3. CAMADA DE INTELIGÊNCIA (DASHBOARD & BUSINESS INTELLIGENCE)
+# CAMADA DE INTELIGÊNCIA (DASHBOARD & BUSINESS INTELLIGENCE)
 # ──────────────────────────────────────────────────────────────────
 
 def _db_obter_tempo_medio_etapas() -> list[dict]:

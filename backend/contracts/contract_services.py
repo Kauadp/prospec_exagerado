@@ -7,7 +7,6 @@ from psycopg2.extras import RealDictCursor
 import streamlit as st
 from docxtpl import DocxTemplate
 import re
-# Imports do seu projeto original
 from backend.contracts.config.eventos import obter_evento
 from backend.contracts.apis.autentique import enviar_para_autentique
 from backend.contracts.apis.brasil_api import validar_cnpj  
@@ -97,11 +96,10 @@ class ContractService:
                                 sigla_evento, razao_social, nome_fantasia, cnpj,
                                 inscricao_estadual, endereco_comercial, nome_socio,
                                 cpf_socio, rg_socio, marcas_expositor, email_socio,
-                                telefone_socio, -- 🔥 1. Coluna adicionada aqui!
+                                telefone_socio,
                                 valor_total, valor_entrada, valor_restante,
                                 forma_pagamento, status_automacao
                             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0.00, 0.00, 0.00, %s, 'Aguardando Vínculo')
-                            -- 🔥 2. Adicionado o 12º %s acima correspondente ao telefone!
                             ON CONFLICT (cnpj) DO NOTHING;
                         """, (
                             self.sigla_evento, exp["EXPOSITOR"], exp["NOMEFANTASIAEXPOSITOR"], cnpj_limpo,
@@ -127,7 +125,7 @@ class ContractService:
         }
 
     # ══════════════════════════════════════════════════════════════════
-    # 🔥 ETAPA 2.1: APENAS GERAR A MINUTA EM WORD (.DOCX)
+    # APENAS GERAR A MINUTA EM WORD (.DOCX)
     # ══════════════════════════════════════════════════════════════════
     def gerar_apenas_docx(self, id_solicitacao: int) -> tuple:
         """Busca os dados no Postgres, renderiza o template e salva o arquivo .docx físico."""
@@ -140,11 +138,9 @@ class ContractService:
             if not contrato:
                 return False, "Contrato não localizado no banco."
 
-            # Carrega contextos estáticos
             modulo_dados = __import__(f"backend.contracts.dados_evento.{self.sigla_evento.lower()}", fromlist=[""])
             dados_tipo = modulo_dados.evento_stand if contrato["tipo_stand"] == "STAND" else modulo_dados.evento_food
 
-            # Reconstrói contexto financeiro (Corrigido para usar valor_total do nosso novo banco!)
             valor_numeric = float(contrato["valor_total"])
             entrada_numeric = valor_entrada(valor_numeric)
             restante_numeric = valor_restante(valor_numeric)
@@ -208,12 +204,11 @@ class ContractService:
             return False, str(e)
 
     # ══════════════════════════════════════════════════════════════════
-    # 🔥 ETAPA 2.2: CONVERTER EM PDF E MANDAR PARA A AUTENTIQUE
+    # CONVERTER EM PDF E MANDAR PARA A AUTENTIQUE
     # ══════════════════════════════════════════════════════════════════
     def converter_pdf_e_disparar_autentique(self, id_solicitacao: int, caminho_docx: str, modo_teste: bool = False) -> dict:
         """Pega o arquivo DOCX gerado, passa pelo LibreOffice Headless, envia à API e atualiza os status."""
         try:
-            # 1. Busca as informações do expositor no banco
             with obter_conexao() as conn:
                 with conn.cursor() as cur:
                     cur.execute("SELECT * FROM contratos_pendentes WHERE id = %s", (id_solicitacao,))
@@ -225,7 +220,6 @@ class ContractService:
             nome_base = f"contrato_{contrato['nome_fantasia'].replace(' ', '_').lower()}"
             caminho_pdf = os.path.join("contratos", f"{nome_base}.pdf")
 
-            # 2. Conversão via LibreOffice Headless (com a nossa trava de segurança híbrida Windows/Linux)
             caminho_libreoffice_windows = r"C:\Program Files\LibreOffice\program\soffice.exe"
             if os.path.exists(caminho_libreoffice_windows):
                 comando_cmd = [caminho_libreoffice_windows, "--headless", "--convert-to", "pdf", "--outdir", "contratos", caminho_docx]
@@ -234,7 +228,6 @@ class ContractService:
             
             subprocess.run(comando_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-            # Trava do modo teste
             if modo_teste:
                 return {
                     "status": "sucesso", 
@@ -243,13 +236,11 @@ class ContractService:
                     "telefone_socio": contrato.get("telefone_socio")
                 }
 
-            # 3. Resgata Token da Autentique no secrets
             try:
                 token_autentique = st.secrets["AUTENTIQUE"][f"TOKEN_{self.sigla_evento}"]
             except KeyError:
                 return {"status": "erro", "mensagem": f"Token da Autentique não localizado para {self.sigla_evento}."}
 
-            # 4. Faz o upload real do PDF para a API da Autentique
             resposta_api = enviar_para_autentique(
                 caminho_pdf=caminho_pdf,
                 nome_documento=nome_base.upper(),
@@ -261,7 +252,6 @@ class ContractService:
             if "errors" in resposta_api:
                 return {"status": "erro", "mensagem": f"Erro na API da Autentique: {resposta_api['errors']}"}
             
-            # 5. Captura o link único gerado pela sua nova Mutation GraphQL
             try:
                 dados_assinantes = resposta_api["data"]["createDocument"]["signers"]
                 link_assinatura = dados_assinantes[0]["url"] if dados_assinantes else None
@@ -269,13 +259,10 @@ class ContractService:
                 print(f"Não foi possível extrair a URL da Autentique: {e}")
                 link_assinatura = "https://www.autentique.com.br" # Fallback se a API falhar
 
-            # 6. Atualiza o Postgres e move o Kanban do CRM (Unificado e Completo!)
             with obter_conexao() as conn:
                 with conn.cursor() as cur:
-                    # Finaliza a esteira de contratos pendentes
                     cur.execute("UPDATE contratos_pendentes SET status_automacao = 'Concluido', updated_at = NOW() WHERE id = %s", (id_solicitacao,))
                     
-                    # Se tiver lead_id casado, atualiza o status no CRM e grava a transição histórica
                     if contrato["lead_id"]:
                         cur.execute("UPDATE leads SET status = 'Contrato Enviado', updated_at = NOW() WHERE id = %s", (contrato["lead_id"],))
                         cur.execute("""

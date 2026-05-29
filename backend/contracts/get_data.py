@@ -34,10 +34,8 @@ def carregar_expositores(url):
     file = BytesIO(response.content)
     df = pd.read_excel(file, sheet_name="Sheet1")
     
-    # remover espaços extras nas colunas
     df.columns = df.columns.str.strip()
 
-    # substituir valores faltantes
     df = df.fillna("")
 
     print(f"[DEBUG] Colunas encontradas na planilha: {list(df.columns)}")
@@ -89,10 +87,8 @@ def limpar_valor(valor):
         return float(valor)
 
     if isinstance(valor, str):
-        # Remove R$, espaços e qualquer coisa que não seja número, vírgula, ponto ou sinal
         valor = re.sub(r"[^\d,.\-]", "", valor)
 
-        # Se tiver vírgula, assume formato brasileiro
         if "," in valor:
             valor = valor.replace(".", "")
             valor = valor.replace(",", ".")
@@ -123,14 +119,10 @@ def extrair_percentual_comissionado(valor_comissionado):
     if texto in {"", "NA", "N/A", "NULO", "NULL", "-"}:
         return None
 
-    # Caso venha como número puro (ex: 0.1, 10, 10.0)
     if "%" not in texto:
         numero_limpo = texto.replace(",", ".")
         try:
             numero = float(numero_limpo)
-            # Regra:
-            # - <= 1: assume decimal (0.1 -> 10%)
-            # - > 1: assume percentual inteiro (10 -> 10%)
             if numero <= 1:
                 return numero
             return numero / 100

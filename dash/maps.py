@@ -24,7 +24,6 @@ MAPA_SEGMENTOS: dict[str, dict] = {
     "Atacado":            {"prefixo": "atacado",    "termos_bio": ["atacado", "distribuidor", "atacarejo"]},
 }
 
-# Pipeline ordenado — NÃO altere a ordem sem revisar _proximo_passo()
 PIPELINE: list[str] = [
     "Agendado",
     "No Show",

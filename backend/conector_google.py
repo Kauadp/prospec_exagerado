@@ -20,11 +20,8 @@ class ConectorGoogleMaps:
         if self.mock_mode:
             return self._gerar_dados_simulados(termo_busca, cidade_regiao)
 
-        # Endpoint moderno da Places API (New)
         url = "https://places.googleapis.com/v1/places:searchText"
         
-        # O segredo da API New: Você diz exatamente quais campos quer receber no Header
-        # Isso economiza dinheiro e evita cobrar taxas caras!
         headers = {
             "Content-Type": "application/json",
             "X-Goog-Api-Key": self.api_key,
@@ -50,7 +47,6 @@ class ConectorGoogleMaps:
 
                 empresas_formatadas = []
                 for p in places:
-                    # Extrai os textos das reviews
                     reviews_texto = []
                     for rev in p.get('reviews', []):
                         if rev.get('text', {}).get('text'):
@@ -59,7 +55,7 @@ class ConectorGoogleMaps:
                     empresas_formatadas.append({
                         "nome_fantasia": p.get('displayName', {}).get('text', 'Sem nome'),
                         "telefone": p.get('internationalPhoneNumber', 'Não informado'),
-                        "site": p.get('websiteUri', 'Não possui site'), # <- Ajustado aqui!
+                        "site": p.get('websiteUri', 'Não possui site'),
                         "rating_maps": p.get('rating', 0.0),
                         "total_reviews": p.get('userRatingCount', 0),
                         "endereco_completo": p.get('formattedAddress', 'Sem endereço'),

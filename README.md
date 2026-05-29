@@ -15,6 +15,7 @@ O sistema minera leads reais diretamente da **Google Places API (New)**, filtra 
 
 ---
 
+```
 ## 📂 Estrutura do Projeto
 
 ├── backend/
@@ -46,7 +47,7 @@ O sistema minera leads reais diretamente da **Google Places API (New)**, filtra 
 │   └── template_parcelado_rj.docx
 ├── README.md                     # Documentação técnica unificada
 └── requirements.txt              # Dependências de produção do projeto
-
+```
 ---
 
 ## 🗄️ Arquitetura do Banco de Dados

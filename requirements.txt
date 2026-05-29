@@ -3,7 +3,7 @@ numpy
 pandas
 leia-br
 streamlit
-psycopg2
+psycopg2-binary==2.9.12
 plotly
 babel
 num2words

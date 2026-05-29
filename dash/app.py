@@ -57,8 +57,7 @@ _init_state()
 
 theme.render_page_header(
     title="Exagerado - CRM",
-    subtitle="Sistema Interno Operacional de Vendas",
-    badge="v1.2",
+    subtitle="Sistema Interno Operacional de Vendas"
 )
 
 # ──────────────────────────────────────────────────────────────────
@@ -414,13 +413,19 @@ with aba3:
         if filtro_tempo == "Hoje":
             df_hist_filtrado = df_hist[df_hist['criado_em'].dt.date == hoje_dt] if not df_hist.empty else pd.DataFrame()
             leads_criados_periodo = [l for l in todos_leads if pd.to_datetime(l.get('criado_em')).date() == hoje_dt]
+            
         elif filtro_tempo == "Esta Semana":
             inicio_semana = hoje_dt - pd.Timedelta(days=hoje_dt.weekday())
-            df_hist_filtrado = df_hist[df_hist['criado_em'].dt.date >= inicio_semana] if not df_hist.empty else pd.DataFrame()
+            df_hist_filtrado = df_hist[df_hist['criado_em'].dt.date >= inicio_semana] if not pd.DataFrame(df_hist).empty else pd.DataFrame()
             leads_criados_periodo = [l for l in todos_leads if pd.to_datetime(l.get('criado_em')).date() >= inicio_semana]
+            
         elif filtro_tempo == "Este Mês":
             df_hist_filtrado = df_hist[(df_hist['criado_em'].dt.year == hoje_dt.year) & (df_hist['criado_em'].dt.month == hoje_dt.month)] if not df_hist.empty else pd.DataFrame()
-            leads_criados_periodo = [l for l in todos_leads if pd.to_datetime(l.get('criado_em')).year == hoje_dt.year and pd.to_datetime(l.get('criado_em')).month == hoje_dt.month]
+            leads_criados_periodo = [
+                l for l in todos_leads 
+                if pd.to_datetime(l.get('criado_em')).year == hoje_dt.year 
+                and pd.to_datetime(l.get('criado_em')).month == hoje_dt.month
+            ]
         else:
             df_hist_filtrado = df_hist
             leads_criados_periodo = todos_leads
@@ -546,7 +551,7 @@ with aba3:
         # ──────────────────────────────────────────────────────────
         # SEÇÃO 2: ANALYTICS & CICLO DE VIDA
         # ──────────────────────────────────────────────────────────
-        st.subheader("🧠 Laboratório Científico de Sales Ops")
+        st.subheader("🧠 Laboratório Científico")
         st.caption("Métricas avançadas de retenção e distribuição para insights de modelagem preditiva.")
         
         leads_analise = [l for l in todos_leads if l.get("status") in PIPELINE]
@@ -599,6 +604,39 @@ with aba3:
             if est_data:
                 df_est = pd.DataFrame(list(est_data.items()), columns=["Estado", "Leads"]).sort_values("Leads", ascending=False)
                 st.bar_chart(df_est.set_index("Estado"), use_container_width=True, color="#10B981")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("#### 🔬 Engenharia de Atributos & Validação do Modelo")
+        
+        try:
+            from backend.db_repository import BancoDadosManager
+            db_manager = BancoDadosManager()
+            leads_motor = db_manager.listar_todos_prospeccao()
+            df_motor = pd.DataFrame(leads_motor)
+        except Exception:
+            df_motor = pd.DataFrame()
+
+        if df_motor.empty:
+            st.info("💡 Os gráficos do modelo de IA aparecerão assim que os primeiros leads forem minerados e qualificados na Aba 5.")
+        else:
+            g5, g6 = st.columns(2)
+            
+            with g5:
+                st.markdown("##### 🎯 Score Médio por Decisão Humana (Calibração)")
+                df_motor['validado_txt'] = df_motor['validado_por_humano'].apply(lambda x: "Aprovado (Qualificado)" if x else "Rejeitado / Pendente")
+                
+                df_calibracao = df_motor.groupby('validado_txt')['score_heuristico'].mean().reset_index()
+                
+                st.bar_chart(df_calibracao.set_index('validado_txt'), use_container_width=True, color="#F59E0B")
+                st.caption("🚨 **Gatilho pro Notebook:** O score dos Aprovados deve ser significativamente maior que o dos Rejeitados. Se estiverem próximos, recalibre os pesos da heurística.")
+
+            with g6:
+                st.markdown("##### 🧠 Índice de Satisfação Semântica (NLP) por Segmento")
+                df_sent_seg = df_motor.groupby('segmento')['sentimento_reviews_medio'].mean().reset_index()
+                df_sent_seg.columns = ['Segmento', 'Sentimento Médio']
+                
+                st.bar_chart(df_sent_seg.set_index('Segmento'), use_container_width=True, color="#EC4899")
+                st.caption("🔥 **Gatilho pro Notebook:** Segmentos com sentimento muito negativo indicam mercados em crise ou com dores operacionais — terreno fértil para prospecção agressiva.")
 
 # ══════════════════════════════════════════════════════════════════
 # ABA 4 — CONTRATOS (AUTOMATIZAÇÃO INTEGRADA)
@@ -994,7 +1032,7 @@ with aba5:
         df_editado = st.data_editor(
             df_exibir,
             hide_index=True,
-            width=None, 
+            width="stretch", 
             disabled=["ID", "Nome da Empresa", "Score 🔥", "Nota ⭐", "Avaliações 💬", "Sentimento 🧠", "Telefone", "Website"],
             column_config={
                 "ID": st.column_config.NumberColumn(format="%d"),

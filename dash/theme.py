@@ -747,7 +747,7 @@ def apply() -> None:
     st.markdown(_CSS, unsafe_allow_html=True)
 
 
-def render_page_header(title: str, subtitle: str, badge: str = "demo") -> None:
+def render_page_header(title: str, subtitle: str) -> None:
     st.markdown(
         f"""
         <div class="page-header">
@@ -755,7 +755,6 @@ def render_page_header(title: str, subtitle: str, badge: str = "demo") -> None:
                 <h1>⚡ {title}</h1>
                 <p class="subtitle">{subtitle}</p>
             </div>
-            <span class="badge">{badge}</span>
         </div>
         """,
         unsafe_allow_html=True,

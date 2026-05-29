@@ -21,7 +21,7 @@ MAPA_SEGMENTOS: dict[str, dict] = {
     "Moda Fitness":       {"prefixo": "fitness",    "termos_bio": ["fitness", "academia", "legging", "sportswear"]},
     "Produtos de Beleza": {"prefixo": "beleza",     "termos_bio": ["beleza", "cosméticos", "skincare", "estética"]},
     "Eletrodomésticos":   {"prefixo": "eletro",     "termos_bio": ["eletrodomésticos", "eletrônicos", "linha branca"]},
-    "Atacado":            {"prefixo": "atacado",    "termos_bio": ["atacado", "distribuidor", "atacarejo"]},
+    "Outro":              {"prefixo": "atacado",    "termos_bio": ["atacado", "distribuidor", "atacarejo"]},
 }
 
 PIPELINE: list[str] = [

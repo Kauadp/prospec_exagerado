@@ -31,7 +31,7 @@ def enviar_para_autentique(
             "Passe token_autentique como parâmetro ou configure AUTENTIQUE_TOKEN no .env"
         )
 
-    url = "https://api.autentique.com.br/v3/graphql"
+    url = "https://api.autentique.com.br/v2/graphql"
 
     headers = {
         "Authorization": f"Bearer {token_autentique}",
